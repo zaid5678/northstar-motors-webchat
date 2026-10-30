@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Browse selected used vehicles from Northstar Motors dealerships."
+    />
+    <title>Used Cars | Northstar Motors</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="logo" href="/" aria-label="Northstar Motors home">
+          <span class="logo-symbol">N</span>
+          <span>
+            <strong>Northstar</strong>
+            <small>Motors</small>
+          </span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a class="active" href="#vehicles">Used cars</a>
+          <a href="#offers">New car offers</a>
+          <a href="#locations">Locations</a>
+          <a href="#service">Servicing</a>
+        </nav>
+        <a class="header-action" href="#locations">Find a dealership</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow">Northstar selected vehicles</p>
+          <h1>Find a car that feels like yours.</h1>
+          <p class="hero-description">
+            Carefully prepared vehicles from our North West dealerships, with warranty cover and
+            support from people who know every car.
+          </p>
+          <form id="hero-search" class="hero-search" role="search">
+            <label class="sr-only" for="hero-query">Search vehicles</label>
+            <input
+              id="hero-query"
+              name="q"
+              type="search"
+              placeholder="Search make, model or colour"
+            />
+            <button type="submit">Search stock</button>
+          </form>
+        </div>
+        <div class="hero-stat">
+          <span id="vehicle-count">—</span>
+          <small>vehicles available today</small>
+        </div>
+      </section>
+
+      <section id="vehicles" class="inventory-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Used car search</p>
+            <h2>Explore our current stock</h2>
+          </div>
+          <p id="result-summary" class="result-summary">Loading vehicles…</p>
+        </div>
+
+        <div class="inventory-layout">
+          <aside class="filters" aria-label="Vehicle filters">
+            <div class="filter-title">
+              <h3>Refine results</h3>
+              <button id="clear-filters" class="link-button" type="button">Clear</button>
+            </div>
+            <label>
+              Keyword
+              <input id="query-filter" type="search" placeholder="e.g. Volvo XC40" />
+            </label>
+            <label>
+              Make
+              <select id="make-filter">
+                <option value="">All makes</option>
+                <option>BMW</option>
+                <option>MINI</option>
+                <option>Jaguar</option>
+                <option>Land Rover</option>
+                <option>Volvo</option>
+                <option>Kia</option>
+              </select>
+            </label>
+            <label>
+              Body style
+              <select id="body-filter">
+                <option value="">All body styles</option>
+                <option>SUV</option>
+                <option>Hatchback</option>
+                <option>Saloon</option>
+                <option>Estate</option>
+              </select>
+            </label>
+            <label>
+              Fuel type
+              <select id="fuel-filter">
+                <option value="">All fuel types</option>
+                <option>Petrol</option>
+                <option>Diesel</option>
+                <option>Hybrid</option>
+                <option>Electric</option>
+              </select>
+            </label>
+            <label>
+              Maximum price
+              <select id="price-filter">
+                <option value="">Any price</option>
+                <option value="2500000">£25,000</option>
+                <option value="3500000">£35,000</option>
+                <option value="4500000">£45,000</option>
+                <option value="6000000">£60,000</option>
+              </select>
+            </label>
+          </aside>
+
+          <div>
+            <div class="sort-row">
+              <label>
+                Sort by
+                <select id="sort-filter">
+                  <option value="newest">Newest first</option>
+                  <option value="priceAsc">Price: low to high</option>
+                  <option value="priceDesc">Price: high to low</option>
+                  <option value="mileageAsc">Lowest mileage</option>
+                </select>
+              </label>
+            </div>
+            <div id="vehicle-grid" class="vehicle-grid" aria-live="polite"></div>
+            <button id="load-more" class="load-more" type="button" hidden>
+              Show more vehicles
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="offers" class="promise-section">
+        <p class="eyebrow">The Northstar standard</p>
+        <h2>Confidence comes as standard.</h2>
+        <div class="promise-grid">
+          <article>
+            <span>01</span>
+            <h3>120-point inspection</h3>
+            <p>Every selected vehicle is checked by trained technicians before it reaches you.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Warranty included</h3>
+            <p>Drive away with a minimum six-month warranty and roadside assistance.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Nationwide delivery</h3>
+            <p>Choose the right car from any Northstar location and arrange delivery.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="locations" class="locations-section">
+        <div>
+          <p class="eyebrow">Visit Northstar</p>
+          <h2>Four dealerships. One standard of care.</h2>
+        </div>
+        <div id="location-list" class="location-list"></div>
+      </section>
+    </main>
+
+    <dialog id="vehicle-dialog" class="vehicle-dialog">
+      <button id="close-dialog" class="dialog-close" aria-label="Close vehicle details">×</button>
+      <div id="vehicle-detail"></div>
+    </dialog>
+
+    <footer id="service">
+      <div class="footer-inner">
+        <div class="logo footer-logo">
+          <span class="logo-symbol">N</span>
+          <span><strong>Northstar</strong><small>Motors</small></span>
+        </div>
+        <p>Selected vehicles, manufacturer servicing, and straightforward support.</p>
+        <p>© Northstar Motors</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

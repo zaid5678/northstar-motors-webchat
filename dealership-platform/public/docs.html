@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Northstar Motors API</title>
+    <link rel="stylesheet" href="/platform.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/docs">
+          <span class="brand-mark">NM</span>
+          <span>Dealership Platform API</span>
+        </a>
+        <nav class="nav">
+          <a href="http://localhost:4173">Vehicle website</a>
+          <a href="/admin">Systems Console</a>
+          <a href="/openapi.json">OpenAPI JSON</a>
+        </nav>
+      </div>
+    </header>
+    <main class="shell">
+      <p class="eyebrow">Northstar Motors · Version 1.0</p>
+      <h1>Local dealership systems, documented and inspectable.</h1>
+      <p class="lede">
+        Browse the available inventory, sales, workshop, and contact operations. Expand any endpoint
+        to inspect its contract or send a request to the running local platform.
+      </p>
+      <div class="notice">
+        Catalogue and reference reads are public. Saved customer-record access and write operations
+        require
+        <code>X-API-Key: northstar-local-development</code>. Booking creation also requires a unique
+        <code>Idempotency-Key</code>.
+      </div>
+
+      <h2 class="section-heading">API operations</h2>
+      <div id="endpoint-list" class="endpoint-list" aria-live="polite">
+        <div class="empty">Loading the OpenAPI contract…</div>
+      </div>
+    </main>
+    <script type="module" src="/docs.js"></script>
+  </body>
+</html>

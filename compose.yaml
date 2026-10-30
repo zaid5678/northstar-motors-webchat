@@ -1,0 +1,37 @@
+services:
+  dealership-platform:
+    build:
+      context: ./dealership-platform
+    environment:
+      NORTHSTAR_API_KEY: northstar-local-development
+      NORTHSTAR_ADMIN_KEY: northstar-local-admin
+      NORTHSTAR_DATA_PATH: /data/northstar.sqlite3
+      NORTHSTAR_PORT: "4010"
+    ports:
+      - "4010:4010"
+    volumes:
+      - northstar-platform-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4010/health')",
+        ]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 2s
+
+  dealership-website:
+    build:
+      context: ./dealership-website
+    ports:
+      - "4173:4173"
+    depends_on:
+      dealership-platform:
+        condition: service_healthy
+
+volumes:
+  northstar-platform-data:

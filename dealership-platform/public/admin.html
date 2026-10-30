@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Northstar Motors Systems Console</title>
+    <link rel="stylesheet" href="/platform.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/admin">
+          <span class="brand-mark">NM</span>
+          <span>Dealership Systems Console</span>
+        </a>
+        <nav class="nav">
+          <a href="http://localhost:4173">Vehicle website</a>
+          <a href="/docs">API documentation</a>
+        </nav>
+      </div>
+    </header>
+    <main class="shell">
+      <p class="eyebrow">Local operations</p>
+      <h1>See what reached the dealership systems.</h1>
+      <p class="lede">
+        Inspect customer records and recent API activity. Email addresses and phone numbers are
+        redacted in the request log; saved business records retain their submitted values.
+      </p>
+
+      <div id="stat-grid" class="stat-grid" aria-live="polite"></div>
+
+      <div class="toolbar">
+        <div>
+          <p class="eyebrow">Persisted records</p>
+          <h2 id="table-title">Sales enquiries</h2>
+        </div>
+        <div class="button-row">
+          <button id="refresh" class="secondary">Refresh</button>
+          <button id="reset" class="danger">Reset platform</button>
+        </div>
+      </div>
+
+      <div id="tabs" class="tabs"></div>
+      <div id="records" class="table-wrap">
+        <div class="empty">Loading records…</div>
+      </div>
+
+      <div class="toolbar">
+        <div>
+          <p class="eyebrow">Observability</p>
+          <h2>Recent API requests</h2>
+        </div>
+        <span id="updated" class="status"></span>
+      </div>
+      <div id="request-log" class="table-wrap"></div>
+    </main>
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

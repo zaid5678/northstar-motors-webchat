@@ -1,0 +1,829 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Northstar Motors Dealership Platform API",
+    "version": "1.0.0",
+    "description": "Local dealership inventory, sales, workshop, and contact operations. Catalogue and reference reads are public. Saved customer-record access and write operations require X-API-Key. Test-drive and workshop booking creation also requires Idempotency-Key."
+  },
+  "servers": [{ "url": "http://localhost:4010", "description": "Local platform" }],
+  "tags": [
+    { "name": "Dealerships" },
+    { "name": "Inventory" },
+    { "name": "Offers" },
+    { "name": "Sales" },
+    { "name": "Workshop" },
+    { "name": "Contact" },
+    { "name": "Reference" }
+  ],
+  "paths": {
+    "/api/dealerships": {
+      "get": {
+        "tags": ["Dealerships"],
+        "summary": "List dealership locations",
+        "operationId": "listDealerships",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/api/dealerships/{dealershipId}": {
+      "get": {
+        "tags": ["Dealerships"],
+        "summary": "Get a dealership",
+        "operationId": "getDealership",
+        "parameters": [{ "$ref": "#/components/parameters/DealershipId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/dealerships/{dealershipId}/opening-hours": {
+      "get": {
+        "tags": ["Dealerships"],
+        "summary": "Get department opening hours and holiday exceptions",
+        "operationId": "getOpeningHours",
+        "parameters": [{ "$ref": "#/components/parameters/DealershipId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/vehicles": {
+      "get": {
+        "tags": ["Inventory"],
+        "summary": "Search vehicle inventory",
+        "description": "All price values are integer pence. Missing prices are returned as null.",
+        "operationId": "searchVehicles",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "make", "in": "query", "schema": { "type": "string" } },
+          { "name": "model", "in": "query", "schema": { "type": "string" } },
+          { "name": "fuelType", "in": "query", "schema": { "type": "string" } },
+          { "name": "transmission", "in": "query", "schema": { "type": "string" } },
+          { "name": "bodyStyle", "in": "query", "schema": { "type": "string" } },
+          {
+            "name": "availability",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["available", "reserved", "sold"] }
+          },
+          { "name": "dealershipId", "in": "query", "schema": { "type": "string" } },
+          { "name": "minPricePence", "in": "query", "schema": { "type": "integer" } },
+          { "name": "maxPricePence", "in": "query", "schema": { "type": "integer" } },
+          { "name": "maxMileage", "in": "query", "schema": { "type": "integer" } },
+          { "name": "minYear", "in": "query", "schema": { "type": "integer" } },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["newest", "priceAsc", "priceDesc", "mileageAsc"],
+              "default": "newest"
+            }
+          },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 12 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated vehicle results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Vehicle" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                }
+              }
+            }
+          },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/vehicles/{vehicleId}": {
+      "get": {
+        "tags": ["Inventory"],
+        "summary": "Get full vehicle details",
+        "operationId": "getVehicle",
+        "parameters": [{ "$ref": "#/components/parameters/VehicleId" }],
+        "responses": {
+          "200": {
+            "description": "Vehicle details",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Vehicle" } }
+            }
+          },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/vehicles/{vehicleId}/availability": {
+      "get": {
+        "tags": ["Inventory"],
+        "summary": "Get vehicle availability and permitted next actions",
+        "operationId": "getVehicleAvailability",
+        "parameters": [{ "$ref": "#/components/parameters/VehicleId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/offers": {
+      "get": {
+        "tags": ["Offers"],
+        "summary": "List published new-car offers",
+        "operationId": "listOffers",
+        "parameters": [
+          { "name": "make", "in": "query", "schema": { "type": "string" } },
+          {
+            "name": "productType",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["PCP", "PCH"] }
+          }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/api/offers/{offerId}": {
+      "get": {
+        "tags": ["Offers"],
+        "summary": "Get a published offer",
+        "operationId": "getOffer",
+        "parameters": [
+          { "name": "offerId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/service-types": {
+      "get": {
+        "tags": ["Workshop"],
+        "summary": "List workshop service types",
+        "operationId": "listServiceTypes",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/api/test-drive-slots": {
+      "get": {
+        "tags": ["Sales"],
+        "summary": "Find available test-drive slots",
+        "operationId": "listTestDriveSlots",
+        "parameters": [
+          { "name": "dealershipId", "in": "query", "schema": { "type": "string" } },
+          { "name": "vehicleId", "in": "query", "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/DateFrom" },
+          { "$ref": "#/components/parameters/DateTo" }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/api/sales-enquiries": {
+      "post": {
+        "tags": ["Sales"],
+        "summary": "Create a sales enquiry",
+        "operationId": "createSalesEnquiry",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OptionalIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": ["dealershipId", "enquiryType", "message"],
+                    "properties": {
+                      "dealershipId": { "type": "string" },
+                      "vehicleId": { "type": ["string", "null"] },
+                      "enquiryType": {
+                        "type": "string",
+                        "enum": ["general", "availability", "finance", "part-exchange"]
+                      },
+                      "message": { "type": "string", "minLength": 5, "maxLength": 2000 }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "dealershipId": "northstar-manchester",
+                "vehicleId": "veh-001",
+                "enquiryType": "availability",
+                "firstName": "Jamie",
+                "lastName": "Taylor",
+                "email": "jamie@example.com",
+                "phone": "07700900123",
+                "message": "Is this vehicle available to view on Saturday?"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/sales-enquiries/{recordId}": {
+      "get": {
+        "tags": ["Sales"],
+        "summary": "Get a sales enquiry",
+        "operationId": "getSalesEnquiry",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/test-drive-bookings": {
+      "post": {
+        "tags": ["Sales"],
+        "summary": "Claim a test-drive slot and create a confirmed booking",
+        "description": "The slot and vehicle are checked atomically. Reusing the same Idempotency-Key and request returns the original booking.",
+        "operationId": "createTestDriveBooking",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RequiredIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": ["slotId"],
+                    "properties": {
+                      "slotId": { "type": "string" },
+                      "notes": { "type": ["string", "null"], "maxLength": 2000 }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/test-drive-bookings/{recordId}": {
+      "get": {
+        "tags": ["Sales"],
+        "summary": "Get a test-drive booking",
+        "operationId": "getTestDriveBooking",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/vehicle-interests": {
+      "post": {
+        "tags": ["Sales"],
+        "summary": "Register interest in a reserved vehicle",
+        "operationId": "createVehicleInterest",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OptionalIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": ["vehicleId"],
+                    "properties": {
+                      "vehicleId": { "type": "string" },
+                      "notes": { "type": ["string", "null"] }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/vehicle-interests/{recordId}": {
+      "get": {
+        "tags": ["Sales"],
+        "summary": "Get a vehicle-interest record",
+        "operationId": "getVehicleInterest",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/callback-requests": {
+      "post": {
+        "tags": ["Contact"],
+        "summary": "Request a dealership callback",
+        "operationId": "createCallbackRequest",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OptionalIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": ["dealershipId", "department", "reason"],
+                    "properties": {
+                      "dealershipId": { "type": "string" },
+                      "department": {
+                        "type": "string",
+                        "enum": ["sales", "service", "parts"]
+                      },
+                      "vehicleId": { "type": ["string", "null"] },
+                      "preferredTime": { "type": ["string", "null"] },
+                      "reason": { "type": "string", "minLength": 5 }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/callback-requests/{recordId}": {
+      "get": {
+        "tags": ["Contact"],
+        "summary": "Get a callback request",
+        "operationId": "getCallbackRequest",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/workshop-locations": {
+      "get": {
+        "tags": ["Workshop"],
+        "summary": "List workshop locations",
+        "operationId": "listWorkshopLocations",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/api/workshop-availability": {
+      "get": {
+        "tags": ["Workshop"],
+        "summary": "Find available workshop slots",
+        "operationId": "listWorkshopAvailability",
+        "parameters": [
+          { "name": "dealershipId", "in": "query", "schema": { "type": "string" } },
+          { "name": "serviceTypeId", "in": "query", "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/DateFrom" },
+          { "$ref": "#/components/parameters/DateTo" }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/api/workshop-bookings": {
+      "post": {
+        "tags": ["Workshop"],
+        "summary": "Claim a workshop slot and create a confirmed booking",
+        "operationId": "createWorkshopBooking",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RequiredIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": ["slotId", "registration", "mileage"],
+                    "properties": {
+                      "slotId": { "type": "string" },
+                      "registration": { "type": "string" },
+                      "mileage": { "type": "integer", "minimum": 0 },
+                      "notes": { "type": ["string", "null"] }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/workshop-bookings/lookup": {
+      "post": {
+        "tags": ["Workshop"],
+        "summary": "Retrieve an existing workshop booking after matching customer details",
+        "description": "The booking reference, surname, vehicle registration, and phone number must all match. The response includes the appointment, service, and dealership details.",
+        "operationId": "findWorkshopBooking",
+        "security": [{ "ApiKey": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["reference", "lastName", "registration", "phone"],
+                "properties": {
+                  "reference": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "registration": { "type": "string" },
+                  "phone": {
+                    "type": "string",
+                    "description": "UK 01 landline or 07 mobile number."
+                  }
+                }
+              },
+              "example": {
+                "reference": "WORK-10001",
+                "lastName": "Taylor",
+                "registration": "AB12 CDE",
+                "phone": "07700900123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/workshop-bookings/{recordId}": {
+      "get": {
+        "tags": ["Workshop"],
+        "summary": "Get a workshop booking",
+        "operationId": "getWorkshopBooking",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "tags": ["Workshop"],
+        "summary": "Amend a workshop booking",
+        "operationId": "updateWorkshopBooking",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slotId": { "type": "string" },
+                  "mileage": { "type": "integer", "minimum": 0 },
+                  "notes": { "type": ["string", "null"] }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "tags": ["Workshop"],
+        "summary": "Cancel a workshop booking and release its slot",
+        "operationId": "cancelWorkshopBooking",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/dealership-messages": {
+      "post": {
+        "tags": ["Contact"],
+        "summary": "Leave a message for a dealership department",
+        "operationId": "createDealershipMessage",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OptionalIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": [
+                      "dealershipId",
+                      "department",
+                      "subject",
+                      "message",
+                      "preferredContactMethod"
+                    ],
+                    "properties": {
+                      "dealershipId": { "type": "string" },
+                      "department": {
+                        "type": "string",
+                        "enum": ["sales", "service", "parts", "general"]
+                      },
+                      "subject": { "type": "string" },
+                      "message": { "type": "string" },
+                      "preferredContactMethod": {
+                        "type": "string",
+                        "enum": ["email", "phone"]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/dealership-messages/{recordId}": {
+      "get": {
+        "tags": ["Contact"],
+        "summary": "Get a dealership message",
+        "operationId": "getDealershipMessage",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/part-exchange-valuations": {
+      "post": {
+        "tags": ["Sales"],
+        "summary": "Create an indicative part-exchange estimate",
+        "operationId": "createPartExchangeValuation",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OptionalIdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/Contact" },
+                  {
+                    "type": "object",
+                    "required": ["dealershipId", "registration", "mileage", "condition"],
+                    "properties": {
+                      "dealershipId": { "type": "string" },
+                      "registration": { "type": "string" },
+                      "mileage": { "type": "integer", "minimum": 0 },
+                      "condition": {
+                        "type": "string",
+                        "enum": ["excellent", "good", "fair"]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Created" },
+          "422": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/part-exchange-valuations/{recordId}": {
+      "get": {
+        "tags": ["Sales"],
+        "summary": "Get a part-exchange estimate",
+        "operationId": "getPartExchangeValuation",
+        "security": [{ "ApiKey": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RecordId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/business-information": {
+      "get": {
+        "tags": ["Reference"],
+        "summary": "Get finance, privacy, and part-exchange notices",
+        "operationId": "getBusinessInformation",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Local key: northstar-local-development"
+      }
+    },
+    "parameters": {
+      "DealershipId": {
+        "name": "dealershipId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "VehicleId": {
+        "name": "vehicleId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "RecordId": {
+        "name": "recordId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "DateFrom": {
+        "name": "dateFrom",
+        "in": "query",
+        "schema": { "type": "string", "format": "date" }
+      },
+      "DateTo": {
+        "name": "dateTo",
+        "in": "query",
+        "schema": { "type": "string", "format": "date" }
+      },
+      "RequiredIdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "A caller-generated unique value. Reuse only when retrying the same request.",
+        "schema": { "type": "string", "maxLength": 100 }
+      },
+      "OptionalIdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Recommended for safe retries.",
+        "schema": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "schemas": {
+      "Contact": {
+        "type": "object",
+        "required": ["firstName", "lastName", "email", "phone"],
+        "properties": {
+          "firstName": { "type": "string", "minLength": 2 },
+          "lastName": { "type": "string", "minLength": 2 },
+          "email": { "type": "string", "format": "email" },
+          "phone": {
+            "type": "string",
+            "description": "UK 01 landline or 07 mobile number."
+          }
+        }
+      },
+      "Vehicle": {
+        "type": "object",
+        "required": [
+          "id",
+          "dealershipId",
+          "make",
+          "model",
+          "variant",
+          "year",
+          "mileage",
+          "availability",
+          "images"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "dealershipId": { "type": "string" },
+          "dealershipName": { "type": "string" },
+          "dealershipTown": { "type": "string" },
+          "make": { "type": "string" },
+          "model": { "type": "string" },
+          "variant": { "type": "string" },
+          "year": { "type": "integer" },
+          "pricePence": { "type": ["integer", "null"] },
+          "monthlyPricePence": { "type": ["integer", "null"] },
+          "mileage": { "type": "integer" },
+          "fuelType": { "type": "string" },
+          "transmission": { "type": "string" },
+          "colour": { "type": "string" },
+          "bodyStyle": { "type": "string" },
+          "availability": {
+            "type": "string",
+            "enum": ["available", "reserved", "sold"]
+          },
+          "registration": { "type": "string" },
+          "description": { "type": "string" },
+          "images": { "type": "array", "items": { "type": "string" } },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" },
+          "totalItems": { "type": "integer" },
+          "totalPages": { "type": "integer" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message", "fieldErrors", "retryable"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "fieldErrors": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              },
+              "retryable": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Success": {
+        "description": "Successful response",
+        "content": {
+          "application/json": { "schema": { "type": "object", "additionalProperties": true } }
+        }
+      },
+      "Created": {
+        "description": "Record created",
+        "content": {
+          "application/json": { "schema": { "type": "object", "additionalProperties": true } }
+        }
+      },
+      "Error": {
+        "description": "Structured error",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      }
+    }
+  }
+}
