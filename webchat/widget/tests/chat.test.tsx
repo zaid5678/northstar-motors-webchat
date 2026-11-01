@@ -14,14 +14,16 @@ const collecting: View = {
   reference: null,
   can_check_again: false,
   fields: [
-    { name: "email", label: "Email", kind: "email", options: [], value: null },
+    { name: "email", label: "Email", kind: "email", options: [], value: null, required: true },
     {
       name: "department",
       label: "Department",
       kind: "select",
       options: [{ value: "sales", label: "Sales" }],
       value: null,
+      required: true,
     },
+    { name: "preferred_time", label: "Best time to call", kind: "text", options: [], value: null, required: false },
   ],
 };
 const confirming: View = {
@@ -154,6 +156,60 @@ describe("accessibility of every state", () => {
     await openPanel();
     await screen.findByRole("button", { name: "Confirm" });
     await noViolations(container);
+  });
+});
+
+describe("forms", () => {
+  it("marks only the required fields as required", async () => {
+    render(<Chat api={fakeApi({}, { view: collecting })} />);
+    await openPanel();
+    expect((await screen.findByLabelText("Email") as HTMLInputElement).required).toBe(true);
+    expect((screen.getByLabelText("Best time to call") as HTMLInputElement).required).toBe(false);
+  });
+
+  it("says so when an all-optional form is sent empty", async () => {
+    const optionalOnly: View = {
+      ...collecting,
+      fields: [{ name: "notes", label: "Notes", kind: "text", options: [], value: null, required: false }],
+    };
+    const fill = vi.fn();
+    render(<Chat api={fakeApi({ fill }, { view: optionalOnly })} />);
+    await openPanel();
+    await userEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("at least one");
+    expect(fill).not.toHaveBeenCalled();
+  });
+
+  it("sends optional fields before the required ones", async () => {
+    const order: string[] = [];
+    const fill = vi.fn(async (name: string) => {
+      order.push(name);
+      return collecting;
+    });
+    render(<Chat api={fakeApi({ fill }, { view: collecting })} />);
+    await openPanel();
+    await userEvent.type(await screen.findByLabelText("Email"), "a@example.com");
+    await userEvent.type(screen.getByLabelText("Best time to call"), "mornings");
+    await userEvent.selectOptions(screen.getByLabelText("Department"), "sales");
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(order).toEqual(["preferred_time", "email", "department"]));
+  });
+
+  it("shows a verified booking once it is in the transcript", async () => {
+    const verifying: View = { ...collecting, status: "verifying", fields: [
+      { name: "reference", label: "Booking reference", kind: "text", options: [], value: null, required: true },
+    ] };
+    const done: View = { ...idle, status: "completed", message: "Full service at Northstar Manchester" };
+    const identity = vi.fn().mockResolvedValue(done);
+    const transcript = vi
+      .fn()
+      .mockResolvedValueOnce({ messages: [], pending: false, last_event_id: 0, view: verifying, actions: [] })
+      .mockResolvedValue({ messages: [{ role: "assistant", text: done.message }], pending: false, last_event_id: 0, view: done, actions: [] });
+    render(<Chat api={fakeApi({ identity, transcript }, { view: verifying })} />);
+    await openPanel();
+    await userEvent.type(await screen.findByLabelText("Booking reference"), "WORK-10001");
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText("Full service at Northstar Manchester")).toBeTruthy();
   });
 });
 

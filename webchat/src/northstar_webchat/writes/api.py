@@ -277,9 +277,8 @@ def create_app(
         async def identity(
             body: IdentityInput, northstar_session: str | None = Cookie(default=None)
         ) -> View:
-            return await service.submit_identity(
-                _session(northstar_session), **body.model_dump()
-            )
+            session = _session(northstar_session)
+            return recorded(session, await service.submit_identity(session, **body.model_dump()))
 
     if inspector:
 

@@ -414,6 +414,72 @@ class TestFormsAndConfirmation:
         assert sum("CALL-" in item["text"] for item in saved["messages"]) == 1
 
 
+class TestFormsSayWhatIsOptional:
+    async def start(self, http: httpx.AsyncClient, action: str) -> dict[str, Any]:
+        return (await http.post("/api/chat/action", json={"id": action})).json()["view"]
+
+    async def test_optional_fields_are_offered_and_marked(self, http: httpx.AsyncClient) -> None:
+        view = await self.start(http, "callback")
+        fields = {item["name"]: item for item in view["fields"]}
+        assert fields["reason"]["required"] is True
+        assert fields["preferred_time"]["required"] is False
+        assert fields["vehicle_id"]["required"] is False
+
+    async def test_notes_are_offered_on_a_test_drive(self, http: httpx.AsyncClient) -> None:
+        view = await self.start(http, "test_drive")
+        notes = next(item for item in view["fields"] if item["name"] == "notes")
+        assert notes["required"] is False
+
+    async def test_an_amendment_needs_only_one_of_its_fields(
+        self, http: httpx.AsyncClient
+    ) -> None:
+        from ..writes.conftest import TAYLOR
+
+        await self.start(http, "workshop_amend")
+        view = (await http.post("/api/chat/identity", json=TAYLOR)).json()
+        fields = {item["name"]: item for item in view["fields"]}
+        assert set(fields) == {"target_slot_id", "mileage", "notes"}
+        assert not any(item["required"] for item in fields.values())
+
+    async def test_every_workflow_has_a_button(self, http: httpx.AsyncClient) -> None:
+        saved = (await http.get("/api/chat/transcript")).json()
+        ids = {item["id"] for item in saved["actions"]}
+        assert {
+            "test_drive",
+            "workshop_create",
+            "workshop_amend",
+            "workshop_cancel",
+            "booking_retrieval",
+            "part_exchange",
+            "callback",
+            "message",
+            "sales_enquiry",
+            "vehicle_interest",
+        } <= ids
+
+
+class TestRetrievalIsShown:
+    async def test_a_verified_booking_joins_the_transcript(self, http: httpx.AsyncClient) -> None:
+        from ..writes.conftest import TAYLOR
+
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        view = (await http.post("/api/chat/identity", json=TAYLOR)).json()
+        assert view["status"] == "completed"
+        saved = (await http.get("/api/chat/transcript")).json()
+        last = saved["messages"][-1]["text"]
+        assert "Full service" in last and "Northstar Manchester" in last
+        assert "Status: booked" in last
+
+    async def test_asking_twice_does_not_repeat_it(self, http: httpx.AsyncClient) -> None:
+        from ..writes.conftest import TAYLOR
+
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        await http.post("/api/chat/identity", json=TAYLOR)
+        await http.get("/api/conversation/state")
+        saved = (await http.get("/api/chat/transcript")).json()
+        assert sum("Full service" in item["text"] for item in saved["messages"]) == 1
+
+
 class TestInspector:
     def app(self, client: DealershipClient, service: WriteService, *, on: bool) -> Any:  # noqa: F811
         llm = ScriptedLLM([SEARCH, "A steal at £99!", "Here you go."])

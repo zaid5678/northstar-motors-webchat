@@ -28,6 +28,7 @@ export interface Field {
   kind: "text" | "email" | "tel" | "number" | "textarea" | "select";
   options: { value: string; label: string }[];
   value: string | null;
+  required: boolean;
 }
 
 export interface Block {

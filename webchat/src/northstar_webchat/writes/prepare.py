@@ -30,7 +30,7 @@ from ..dealership.models import (
 )
 from ..persistence.repository import Repository
 from ..workflows.types import SlotScalar, WorkflowKind
-from .present import Row, format_when
+from .present import Row, format_when, pretty
 
 
 class CancelRequest(Wire):
@@ -72,6 +72,11 @@ def _contact(values: Values) -> Contact:
     )
 
 
+def _optional_rows(values: Values, **labels: str) -> list[Row]:
+    """Rows for optional slots the customer filled in, so nothing saved is hidden."""
+    return [Row(label=label, value=str(values[name])) for name, label in labels.items() if name in values]
+
+
 def _contact_rows(values: Values) -> list[Row]:
     contact = _contact(values)
     return [
@@ -102,7 +107,7 @@ class Preparer:
         if kind is WorkflowKind.WORKSHOP_CANCEL:
             assert booking_id is not None
             return await self._cancel(booking_id)
-        return self._record(kind, values, key)
+        return await self._record(kind, values, key)
 
     async def _open_at(self, slot: Slot, department: Department, clear: str) -> Refused | None:
         """D-010: a slot starting outside the department's hours for that date is refused."""
@@ -115,6 +120,25 @@ class Preparer:
         if hours.closed or opens is None or closes is None or not opens <= now < closes:
             return Refused(reason="department_closed", clear=(clear,))
         return None
+
+    async def _site(self, dealership_id: str) -> str | None:
+        found = await self._client.list_dealerships()
+        if not isinstance(found, o.DealershipsListed):
+            return None
+        return next((item.name for item in found.dealerships if item.id == dealership_id), None)
+
+    async def _car(self, vehicle_id: str) -> str | None:
+        found = await self._client.get_vehicle(vehicle_id)
+        if not isinstance(found, o.VehicleFound):
+            return None
+        item = found.vehicle
+        return f"{item.year} {item.make} {item.model} {item.variant}"
+
+    async def _service(self, service_id: str) -> str | None:
+        found = await self._client.list_service_types()
+        if not isinstance(found, o.ServiceTypesListed):
+            return None
+        return next((item.name for item in found.service_types if item.id == service_id), None)
 
     def _is_bad_slot(self, slot_id: str) -> bool:
         return self._store.is_unbookable(slot_id, self._now())
@@ -148,6 +172,7 @@ class Preparer:
                 Row(label="Car", value=f"{slot.make} {slot.model} {slot.variant}"),
                 Row(label="When", value=format_when(slot.starts_at)),
                 Row(label="Where", value=slot.dealership_name),
+                *_optional_rows(values, notes="Notes"),
                 *_contact_rows(values),
             ],
         )
@@ -182,6 +207,8 @@ class Preparer:
                 Row(label="When", value=format_when(slot.starts_at)),
                 Row(label="Where", value=slot.dealership_name),
                 Row(label="Registration", value=request.registration),
+                Row(label="Mileage", value=f"{request.mileage:,} miles"),
+                *_optional_rows(values, notes="Notes"),
                 *_contact_rows(values),
             ],
         )
@@ -249,53 +276,93 @@ class Preparer:
             return UNAVAILABLE
         if current.booking.is_cancelled:
             return Refused(reason="booking_cancelled")
+        booking = current.booking
+        service = await self._service(booking.service_type_id)
+        site = await self._site(booking.dealership_id)
+        if service is None or site is None:
+            return UNAVAILABLE
         return Prepared(
             request=CancelRequest(booking_id=booking_id).model_dump_json(),
             title="Cancel your booking",
-            rows=[Row(label="Booking", value=current.booking.reference)],
+            rows=[
+                Row(label="Booking", value=booking.reference),
+                Row(label="Service", value=service),
+                Row(label="Where", value=site),
+            ],
             warnings=["Once cancelled, this appointment time may not be available again."],
         )
 
-    def _record(self, kind: WorkflowKind, values: Values, key: str) -> Prepared:
+    async def _record(self, kind: WorkflowKind, values: Values, key: str) -> Prepared | Refused:
         contact = _contact(values)
         rows = _contact_rows(values)
-        dealership = _text(values, "dealership_id") if "dealership_id" in values else ""
+        site_id = _text(values, "dealership_id") if "dealership_id" in values else ""
+        site = await self._site(site_id) if site_id else ""
+        if site is None:
+            return UNAVAILABLE
+        car = ""
+        if "vehicle_id" in values:
+            named = await self._car(_text(values, "vehicle_id"))
+            if named is None:
+                return Refused(reason="vehicle_not_found", clear=("vehicle_id",))
+            car = named
         if kind is WorkflowKind.CALLBACK:
             callback = CallbackRequest(
                 idempotency_key=key,
-                dealership_id=dealership,
+                dealership_id=site_id,
                 department=_text(values, "department"),
                 vehicle_id=_optional(values, "vehicle_id"),
                 contact=contact,
                 preferred_time=_optional(values, "preferred_time"),
                 reason=_text(values, "reason"),
             )
-            rows = [Row(label="About", value=callback.reason), *rows]
+            shown = [
+                Row(label="Dealership", value=site),
+                Row(label="Department", value=pretty(callback.department)),
+                Row(label="About", value=callback.reason),
+                *([Row(label="Car", value=car)] if car else []),
+                *_optional_rows(values, preferred_time="Best time to call"),
+            ]
             return Prepared(
-                request=callback.model_dump_json(), title="Request a callback", rows=rows
+                request=callback.model_dump_json(), title="Request a callback", rows=[*shown, *rows]
             )
         if kind is WorkflowKind.MESSAGE:
             message = DealershipMessageRequest(
                 idempotency_key=key,
-                dealership_id=dealership,
+                dealership_id=site_id,
                 department=_text(values, "department"),
                 subject=_text(values, "subject"),
                 message=_text(values, "message"),
                 preferred_contact_method=_text(values, "preferred_contact_method"),
                 contact=contact,
             )
-            rows = [Row(label="Subject", value=message.subject), *rows]
-            return Prepared(request=message.model_dump_json(), title="Send your message", rows=rows)
+            shown = [
+                Row(label="Dealership", value=site),
+                Row(label="Department", value=pretty(message.department)),
+                Row(label="Subject", value=message.subject),
+                Row(label="Message", value=message.message),
+                Row(label="Contact by", value=pretty(message.preferred_contact_method)),
+            ]
+            return Prepared(
+                request=message.model_dump_json(), title="Send your message", rows=[*shown, *rows]
+            )
         if kind is WorkflowKind.SALES_ENQUIRY:
             enquiry = SalesEnquiryRequest(
                 idempotency_key=key,
-                dealership_id=dealership,
+                dealership_id=site_id,
                 vehicle_id=_optional(values, "vehicle_id"),
                 enquiry_type=_text(values, "enquiry_type"),
                 contact=contact,
                 message=_text(values, "message"),
             )
-            return Prepared(request=enquiry.model_dump_json(), title="Send your enquiry", rows=rows)
+            shown = [
+                Row(label="Dealership", value=site),
+                Row(label="About", value=pretty(enquiry.enquiry_type)),
+                *([Row(label="Car", value=car)] if car else []),
+                Row(label="Message", value=enquiry.message),
+            ]
+            return Prepared(
+                request=enquiry.model_dump_json(), title="Send your enquiry", rows=[*shown, *rows]
+            )
         if kind is WorkflowKind.VEHICLE_INTEREST:
             interest = VehicleInterestRequest(
                 idempotency_key=key,
@@ -303,16 +370,26 @@ class Preparer:
                 contact=contact,
                 notes=_optional(values, "notes"),
             )
+            shown = [Row(label="Car", value=car), *_optional_rows(values, notes="Notes")]
             return Prepared(
-                request=interest.model_dump_json(), title="Register your interest", rows=rows
+                request=interest.model_dump_json(),
+                title="Register your interest",
+                rows=[*shown, *rows],
             )
         estimate = PartExchangeRequest(
             idempotency_key=key,
-            dealership_id=dealership,
+            dealership_id=site_id,
             registration=_text(values, "registration"),
             mileage=int(values["mileage"]),
             condition=_text(values, "condition"),
             contact=contact,
         )
-        rows = [Row(label="Registration", value=estimate.registration), *rows]
-        return Prepared(request=estimate.model_dump_json(), title="Get your estimate", rows=rows)
+        shown = [
+            Row(label="Dealership", value=site),
+            Row(label="Registration", value=estimate.registration),
+            Row(label="Mileage", value=f"{estimate.mileage:,} miles"),
+            Row(label="Condition", value=pretty(estimate.condition)),
+        ]
+        return Prepared(
+            request=estimate.model_dump_json(), title="Get your estimate", rows=[*shown, *rows]
+        )

@@ -75,6 +75,11 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 
 ## Widget
 
+- The workflow buttons appear only before a conversation starts, or when the model is down. After
+  that a customer starts another task by typing, which needs the model.
+- Optional fields are not marked on screen. A required field is enforced, and an optional one is not.
+- A cancel card shows the booking reference, service, and place, but not the appointment time.
+
 - Tested in Chromium only. Safari and Firefox have not been tried, and neither has a real screen
   reader. Accessibility checks are automated, and automation finds only some problems.
 - The open panel covers part of the page behind it, including inside the vehicle dialog.

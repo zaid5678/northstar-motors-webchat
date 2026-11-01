@@ -27,7 +27,7 @@ export function Form({ fields, disabled, onSubmit }: Props) {
       <div ref={first}>
         {fields.map((field) => {
           const common = {
-            required: true,
+            required: field.required,
             value: values[field.name] ?? "",
             onChange: (event: { target: { value: string } }) =>
               setValues((current) => ({ ...current, [field.name]: event.target.value })),

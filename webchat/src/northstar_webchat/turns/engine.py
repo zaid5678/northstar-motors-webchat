@@ -86,7 +86,12 @@ LOOKUPS = (
 WORKFLOW_BUTTONS = (
     Action(id=WorkflowKind.TEST_DRIVE.value, label="Book a test drive"),
     Action(id=WorkflowKind.WORKSHOP_CREATE.value, label="Book a service"),
+    Action(id=WorkflowKind.WORKSHOP_AMEND.value, label="Change a booking"),
+    Action(id=WorkflowKind.WORKSHOP_CANCEL.value, label="Cancel a booking"),
     Action(id=WorkflowKind.BOOKING_RETRIEVAL.value, label="Check my booking"),
+    Action(id=WorkflowKind.PART_EXCHANGE.value, label="Part-exchange estimate"),
+    Action(id=WorkflowKind.SALES_ENQUIRY.value, label="Make an enquiry"),
+    Action(id=WorkflowKind.VEHICLE_INTEREST.value, label="Register interest"),
     Action(id=WorkflowKind.CALLBACK.value, label="Request a callback"),
     Action(id=WorkflowKind.MESSAGE.value, label="Leave a message"),
 )

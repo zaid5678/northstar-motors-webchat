@@ -1006,3 +1006,37 @@ check against, and B still covers the model wandering off-topic when it does hav
 
 **Revisit if:** customers find the fixed wording off-putting. A safer way to add variety is a
 small set of reviewed phrasings chosen by code, not model text.
+
+---
+
+## D-028: Confirmation cards show everything that will be saved
+
+**Date:** 2026-11-01. **Status:** accepted. The review found it, and the user approved the fix.
+
+**Context:** a click on Confirm only proves a click happened. Eight of nine write cards left out
+something that would be saved: the message body, the department, the dealership, the car, the
+callback time, mileage, condition, or notes. The vehicle-interest card did not name the car.
+
+**Options:**
+
+- **A. Show every saved field, with names in place of internal IDs.** More rows on the card.
+- **B. Show a summary and a "details" link.** Shorter, but a customer can confirm without opening it.
+
+**Choice:** A, enforced by tests. One test fills every slot of every write with a value that cannot
+be mistaken for anything else, and fails if any is missing from the card. Another fails if a workflow
+gains a slot the test does not cover, and another fails if an internal ID appears.
+
+**Why:** the customer should be agreeing to exactly what will be sent.
+
+**Consequences:**
+
+- The same change made the forms ask for optional fields, such as a callback time, and mark them not
+  required. A booking amendment needs only one of its three fields, where before the form demanded all.
+- A verified booking is now shown in the chat. Before, the customer verified and saw nothing.
+- Every workflow now has a button, so all ten work with no model, and each is proven in a real
+  browser.
+- A cancel card shows the reference, service, and place. It cannot show the appointment time,
+  because the platform returns that only on a verified lookup.
+
+**Revisit if:** cards get too long on phones, or the platform returns appointment times on a plain
+read.

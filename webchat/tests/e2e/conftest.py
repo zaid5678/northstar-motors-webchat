@@ -96,6 +96,17 @@ def browser(stack: None) -> Iterator[Browser]:
         instance.close()
 
 
+@pytest.fixture(autouse=True)
+def fresh_platform(stack: None) -> None:
+    """Each test starts from the seed data, because writes change what later tests can see."""
+    request = urllib.request.Request(
+        "http://localhost:4010/admin/api/reset",
+        method="POST",
+        headers={"X-Admin-Key": "northstar-local-admin"},
+    )
+    urllib.request.urlopen(request, timeout=30).close()
+
+
 @pytest.fixture
 def page(browser: Browser) -> Iterator[Page]:
     context = browser.new_context(viewport={"width": 1280, "height": 800})

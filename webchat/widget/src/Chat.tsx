@@ -11,6 +11,8 @@ const STAGES: Record<string, string> = {
 };
 const LOADING = "Loading…";
 const WAITING = "Working on your last message…";
+// Once a write has settled, its result is in the saved transcript.
+const SETTLED = new Set(["completed", "failed", "unknown", "two_bookings"]);
 
 type Boot = "loading" | "ready" | "unavailable";
 
@@ -204,20 +206,27 @@ export function Chat({ api }: { api: Api }) {
 
   const fillForm = async (values: Record<string, string>) => {
     if (!view) return;
+    if (!Object.values(values).some((value) => value.trim())) {
+      setError("Please fill in at least one field.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
+      let result = view;
       if (view.status === "verifying") {
         const details = { reference: "", last_name: "", registration: "", phone: "", ...values };
-        setView(await api.identity(details));
+        result = await api.identity(details);
       } else {
-        let latest = view;
-        for (const field of view.fields) {
+        // Optional fields go first: the last required one is what issues the confirmation.
+        const ordered = [...view.fields].sort((a, b) => Number(a.required) - Number(b.required));
+        for (const field of ordered) {
           const value = values[field.name];
-          if (value) latest = await api.fill(field.name, field.kind === "number" ? Number(value) : value);
+          if (value) result = await api.fill(field.name, field.kind === "number" ? Number(value) : value);
         }
-        setView(latest);
       }
+      setView(result);
+      if (SETTLED.has(result.status)) setMessages((await api.transcript()).messages);
       await inspect();
     } catch {
       setError("We couldn't save that. Please try again.");

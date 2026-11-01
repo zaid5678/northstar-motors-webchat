@@ -11,7 +11,7 @@ from ..dealership.models import TestDriveSlot, VehicleSearch, WorkshopSlot
 from ..persistence.repository import Repository
 from ..workflows.machine import usable_values
 from ..workflows.types import DEFINITIONS, Provenance, Workflow, WorkflowKind
-from .present import Field, FieldKind, Option, format_when
+from .present import Field, FieldKind, Option, format_when, pretty
 
 MAX_CHOICES = 20
 LABELS = {
@@ -48,16 +48,18 @@ KINDS: dict[str, FieldKind] = {
 IDENTITY = ("reference", "last_name", "registration", "phone")
 
 
-def _text_field(name: str, value: str | None = None) -> Field:
-    return Field(name=name, label=LABELS.get(name, name), kind=KINDS.get(name, "text"), value=value)
+def _text_field(name: str, value: str | None = None, required: bool = True) -> Field:
+    return Field(
+        name=name,
+        label=LABELS.get(name, name),
+        kind=KINDS.get(name, "text"),
+        value=value,
+        required=required,
+    )
 
 
 def identity_fields() -> list[Field]:
     return [_text_field(name) for name in IDENTITY]
-
-
-def _pretty(value: str) -> str:
-    return value.replace("-", " ").capitalize()
 
 
 class FormBuilder:
@@ -112,12 +114,17 @@ class FormBuilder:
         return self._bookable(found.slots) if isinstance(found, o.WorkshopSlotsFound) else []
 
     async def _field(
-        self, workflow: Workflow, name: str, booking_id: str | None, value: str | None
+        self,
+        workflow: Workflow,
+        name: str,
+        booking_id: str | None,
+        value: str | None,
+        required: bool,
     ) -> Field | None:
         allowed = DEFINITIONS[workflow.kind].allowed.get(name)
         options: list[Option] | None = None
         if allowed:
-            options = [Option(value=item, label=_pretty(item)) for item in sorted(allowed)]
+            options = [Option(value=item, label=pretty(item)) for item in sorted(allowed)]
         elif name == "dealership_id":
             sites = await self._client.list_dealerships()
             if isinstance(sites, o.DealershipsListed):
@@ -139,8 +146,9 @@ class FormBuilder:
                 kind="select",
                 options=options,
                 value=value,
+                required=required,
             )
-        return _text_field(name, value)
+        return _text_field(name, value, required)
 
     async def build(
         self, workflow: Workflow, booking_id: str | None, also: Iterable[str] = ()
@@ -151,6 +159,8 @@ class FormBuilder:
         known = usable_values(workflow)
         names = [name for name in definition.required if name not in known]
         names += [name for name in definition.any_of if name not in known]
+        # Optional slots are asked for here too, or a customer could never give a callback time.
+        names += [name for name in definition.optional if name not in known and name not in names]
         names += [name for name in also if name not in names]
         names += [
             name
@@ -162,7 +172,9 @@ class FormBuilder:
         for name in names:
             slot = workflow.offers.get(name) or workflow.slots.get(name)
             value = None if slot is None or name in also else str(slot.value)
-            field = await self._field(workflow, name, booking_id, value)
+            field = await self._field(
+                workflow, name, booking_id, value, required=name in definition.required
+            )
             if field is not None:
                 fields.append(field)
         return fields

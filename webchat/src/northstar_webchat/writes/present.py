@@ -44,6 +44,7 @@ class Field(BaseModel):
     kind: FieldKind
     options: list[Option] = []
     value: str | None = None
+    required: bool = True
 
 
 class ConfirmationBlock(BaseModel):
@@ -64,6 +65,11 @@ class View(BaseModel):
     fields: list[Field] = []
     reference: str | None = None
     can_check_again: bool = False
+
+
+def pretty(value: str) -> str:
+    """A stored choice as a customer would write it: part-exchange becomes Part exchange."""
+    return value.replace("-", " ").replace("_", " ").capitalize()
 
 
 def format_when(moment: datetime) -> str:
