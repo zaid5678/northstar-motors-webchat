@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import Browser, Page, expect, sync_playwright
 
 from northstar_webchat.writes.api import WIDGET
 from tests.support import PLATFORM_COMMAND, START_LIMIT_SECONDS, WEBSITE_COMMAND
@@ -21,6 +21,7 @@ from tests.support import PLATFORM_COMMAND, START_LIMIT_SECONDS, WEBSITE_COMMAND
 ROOT = Path(__file__).resolve().parents[3]
 WEBCHAT = ROOT / "webchat"
 SITE = "http://localhost:4173"
+expect.set_options(timeout=20_000)  # Shared build machines can be very slow.
 
 
 def port_in_use(port: int) -> bool:

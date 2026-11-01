@@ -197,6 +197,17 @@ describe("behaviour", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
+  it("moves focus to the box once loading ends, for a customer who opened it early", async () => {
+    let finish: () => void = () => undefined;
+    const begin = vi.fn(() => new Promise<void>((done) => (finish = done)));
+    render(<Chat api={fakeApi({ begin })} />);
+    await openPanel();
+    await act(async () => finish());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Your message" })),
+    );
+  });
+
   it("accepts a second message as soon as a reply appears", async () => {
     const send = vi.fn().mockResolvedValue({ role: "assistant", text: "First reply" });
     render(<Chat api={fakeApi({ send })} />);

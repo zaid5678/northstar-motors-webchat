@@ -154,6 +154,11 @@ export function Chat({ api }: { api: Api }) {
     wasOpen.current = open;
   }, [open]);
 
+  // A disabled box cannot take focus, so someone who opened the chat during loading gets it now.
+  useEffect(() => {
+    if (open && boot === "ready" && !view?.block && !view?.fields.length) boxRef.current?.focus();
+  }, [open, boot, view]);
+
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [messages, stage, open, view]);

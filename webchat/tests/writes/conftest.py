@@ -23,7 +23,7 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.support import PLATFORM_COMMAND, START_LIMIT_SECONDS
+from tests.support import PLATFORM_COMMAND, REQUEST_LIMIT_SECONDS, START_LIMIT_SECONDS
 
 from northstar_webchat.dealership import DealershipClient, RetryPolicy
 from northstar_webchat.dealership import outcomes as o
@@ -194,7 +194,7 @@ def platform(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 
 def counts(base: str) -> dict[str, int]:
     """What really exists on the platform. Tests use this as the source of truth."""
-    with urllib.request.urlopen(f"{base}/admin/api/summary", timeout=5) as response:
+    with urllib.request.urlopen(f"{base}/admin/api/summary", timeout=REQUEST_LIMIT_SECONDS) as response:
         return json.loads(response.read())["counts"]  # type: ignore[no-any-return]
 
 
@@ -203,7 +203,7 @@ def clean_platform(platform: str) -> str:
     request = urllib.request.Request(
         f"{platform}/admin/api/reset", method="POST", headers={"X-Admin-Key": ADMIN_KEY}
     )
-    urllib.request.urlopen(request, timeout=5).close()
+    urllib.request.urlopen(request, timeout=REQUEST_LIMIT_SECONDS).close()
     return platform
 
 

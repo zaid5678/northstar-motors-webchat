@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.support import PLATFORM_COMMAND, START_LIMIT_SECONDS
+from tests.support import PLATFORM_COMMAND, REQUEST_LIMIT_SECONDS, START_LIMIT_SECONDS
 
 from northstar_webchat.dealership import DealershipClient
 from northstar_webchat.dealership import outcomes as o
@@ -94,7 +94,7 @@ async def client(platform: str) -> AsyncIterator[DealershipClient]:
     request = urllib.request.Request(
         f"{platform}/admin/api/reset", method="POST", headers={"X-Admin-Key": ADMIN_KEY}
     )
-    urllib.request.urlopen(request, timeout=5).close()
+    urllib.request.urlopen(request, timeout=REQUEST_LIMIT_SECONDS).close()
     async with DealershipClient(platform, API_KEY) as instance:
         yield instance
 

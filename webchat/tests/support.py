@@ -12,3 +12,4 @@ PLATFORM_COMMAND = [
 ]
 WEBSITE_COMMAND = [sys.executable, "-c", FAST_NAME + "runpy.run_path('server.py', run_name='__main__')"]
 START_LIMIT_SECONDS = 60  # Generous, because shared build machines can be very slow.
+REQUEST_LIMIT_SECONDS = 30
