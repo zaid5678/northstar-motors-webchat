@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support import PLATFORM_COMMAND, START_LIMIT_SECONDS
 
 from northstar_webchat.dealership import DealershipClient
 from northstar_webchat.dealership import outcomes as o
@@ -59,7 +60,7 @@ def platform(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     process = subprocess.Popen(
-        [sys.executable, "-m", "src.server"],
+        PLATFORM_COMMAND,
         cwd=PLATFORM,
         env={
             **os.environ,
@@ -73,7 +74,7 @@ def platform(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         stderr=subprocess.DEVNULL,
     )
     base = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + START_LIMIT_SECONDS
     while True:
         try:
             with urllib.request.urlopen(f"{base}/health", timeout=1):

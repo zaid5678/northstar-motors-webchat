@@ -197,6 +197,26 @@ describe("behaviour", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts a second message as soon as a reply appears", async () => {
+    const send = vi.fn().mockResolvedValue({ role: "assistant", text: "First reply" });
+    render(<Chat api={fakeApi({ send })} />);
+    await openPanel();
+    const box = await screen.findByRole("textbox", { name: "Your message" });
+    await userEvent.type(box, "one{Enter}");
+    await screen.findByText("First reply");
+    await userEvent.type(box, "two{Enter}");
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps a reply if reading the state fails", async () => {
+    const send = vi.fn().mockResolvedValue({ role: "assistant", text: "Kept" });
+    const state = vi.fn().mockRejectedValue(new Error("down"));
+    render(<Chat api={fakeApi({ send, state })} />);
+    await openPanel();
+    await userEvent.type(await screen.findByRole("textbox", { name: "Your message" }), "hi{Enter}");
+    expect(await screen.findByText("Kept")).toBeTruthy();
+  });
+
   it("offers a check when the outcome is unknown", async () => {
     const unknown = { ...idle, status: "unknown", message: "Still checking", can_check_again: true };
     render(<Chat api={fakeApi({}, { view: unknown as View })} />);

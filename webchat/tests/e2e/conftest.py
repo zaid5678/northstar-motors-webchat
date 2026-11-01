@@ -16,6 +16,7 @@ import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
 
 from northstar_webchat.writes.api import WIDGET
+from tests.support import PLATFORM_COMMAND, START_LIMIT_SECONDS, WEBSITE_COMMAND
 
 ROOT = Path(__file__).resolve().parents[3]
 WEBCHAT = ROOT / "webchat"
@@ -28,7 +29,7 @@ def port_in_use(port: int) -> bool:
 
 
 def wait_for(url: str) -> None:
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + START_LIMIT_SECONDS
     while True:
         try:
             with urllib.request.urlopen(url, timeout=1):
@@ -52,14 +53,14 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
     base = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     processes = [
         subprocess.Popen(
-            [sys.executable, "-m", "src.server"],
+            PLATFORM_COMMAND,
             cwd=ROOT / "dealership-platform",
             env={**base, "NORTHSTAR_DATA_PATH": str(data / "p.sqlite3"), "NORTHSTAR_PORT": "4010"},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ),
         subprocess.Popen(
-            [sys.executable, "server.py"],
+            WEBSITE_COMMAND,
             cwd=ROOT / "dealership-website",
             env=base,
             stdout=subprocess.DEVNULL,

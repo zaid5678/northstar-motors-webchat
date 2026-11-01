@@ -24,6 +24,12 @@ WIDGET = WEBCHAT / "src" / "northstar_webchat" / "static" / "widget.js"
 PORTS = {4010: "platform", 4173: "website", 4020: "webchat"}
 LOCAL_KEY = "northstar-local-development"  # The platform's published local key.
 
+# Python's HTTP server looks up its own name on start, which can hang for over a minute where
+# reverse DNS is slow. Skipping that lookup changes nothing else about either server.
+FAST_NAME = "import runpy, socket; socket.getfqdn = lambda name='': name or 'localhost'; "
+PLATFORM = FAST_NAME + "runpy.run_module('src.server', run_name='__main__', alter_sys=True)"
+WEBSITE = FAST_NAME + "runpy.run_path('server.py', run_name='__main__')"
+
 
 def stop(message):
     print("\n" + message)
@@ -89,8 +95,8 @@ def start():
         NORTHSTAR_PORT="4010",
     )
     return [
-        subprocess.Popen([sys.executable, "-m", "src.server"], cwd=ROOT / "dealership-platform", env=platform),
-        subprocess.Popen([sys.executable, "server.py"], cwd=ROOT / "dealership-website", env=common),
+        subprocess.Popen([sys.executable, "-c", PLATFORM], cwd=ROOT / "dealership-platform", env=platform),
+        subprocess.Popen([sys.executable, "-c", WEBSITE], cwd=ROOT / "dealership-website", env=common),
         subprocess.Popen(
             [
                 python_in_environment(), "-m", "uvicorn", "--factory",

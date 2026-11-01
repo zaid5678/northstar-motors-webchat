@@ -98,10 +98,15 @@ export function Chat({ api }: { api: Api }) {
 
   const received = useCallback(
     async (message: ChatMessage) => {
+      // The reply appears last, so the box is ready for the next message as soon as it shows.
+      try {
+        setView(await api.state());
+      } catch {
+        // The reply still matters, and the view is read again after the next turn.
+      }
       setMessages((current) => [...current, message]);
       if (!openRef.current) setUnread((count) => count + 1);
-      setView(await api.state());
-      await inspect();
+      void inspect();
     },
     [api, inspect],
   );
