@@ -15,3 +15,4 @@ dealership-platform/data/
 node_modules/
 webchat/.local/
 webchat/src/northstar_webchat/static/widget.js
+webchat/build/
