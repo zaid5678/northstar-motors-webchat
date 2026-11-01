@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "northstar-webchat"
+version = "0.1.0"
+description = "AI webchat for the Northstar Motors website"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.13",
+    "fastapi>=0.115",
+    "httpx>=0.28,<1",
+    "pydantic>=2.9,<3",
+    "sqlalchemy>=2.0",
+    "tzdata>=2024.1",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "hypothesis>=6.100",
+    "playwright>=1.50",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.22",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+northstar_webchat = ["static/*.js"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "live: runs against a real platform process, started by the test",
+    "e2e: runs in a real browser, and needs ports 4010, 4173, and 4020 free",
+]
+
+[tool.mypy]
+strict = true
+files = ["src"]
+plugins = ["pydantic.mypy"]

@@ -4,4 +4,13 @@ __pycache__/
 *.sqlite3
 .env
 .env.*
+!.env.example
 dealership-platform/data/
+
+.venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.hypothesis/
+node_modules/
+webchat/src/northstar_webchat/static/widget.js

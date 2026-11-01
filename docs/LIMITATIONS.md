@@ -36,9 +36,90 @@ so these are the gaps already known from `docs/PLATFORM-NOTES.md` and `docs/DECI
 - Chat does not show used-car monthly prices, though the website does (D-012).
 - Only vehicles have stable website links. Offers and services do not.
 
+## Dealership client
+
+- A booking 500 is reported as `SlotUnbookable`. The platform source rolls back on that error, but a
+  500 alone cannot prove nothing was saved, so a real booking could exist in a rare fault (D-020).
+- After a lost `PATCH` or `DELETE`, a re-read could run before the request lands, and report "not
+  applied" for a change that then happens. Chat should re-read before acting on that result.
+- The 12 second limit is checked between attempts, so one slow attempt can run past it by up to its
+  own 5 second timeout.
+- `Retry-After` is read as a number of seconds only. The platform never sends it today.
+- The client does not stop an amendment changing site or service. It reports the change, and the
+  policy engine must enforce D-009.
+- D-007's unbookable-slot table, D-008's attempt limits, and D-010's hours filter are not built
+  yet. The client supplies the data they need.
+
+## Product not built yet
+
+Against the brief, these do not exist yet:
+
+- Conversation memory. Each turn is read alone, so "the second one" only works with a page vehicle.
+- Comparing vehicles, and offers shown as links, because the website has no offer pages.
+- Structured operational logging and metrics, beyond the event log and access logs.
+
+## Widget
+
+- Tested in Chromium only. Safari and Firefox have not been tried, and neither has a real screen
+  reader. Accessibility checks are automated, and automation finds only some problems.
+- The open panel covers part of the page behind it, including inside the vehicle dialog.
+- Form field errors are general, and do not yet point at the field that failed.
+- Customers cannot abandon a workflow from the widget, and there is no button to delete a chat (D-017).
+- A form that needs a car lists up to 50 cars as a plain dropdown.
+- Vehicle comparison has no dedicated view.
+- Stored stream events are not yet removed by the 30-day retention rule, because that job is not built.
+
+## Scaling
+
+- The concurrency gate, read cache, and per-session lock are per process (D-024).
+- Vehicle cards can be up to 30 seconds out of date. Writes always recheck live data.
+- `docs/SCALING.md` names metrics to add. None exist yet.
+
+## LLM and grounding
+
+- The validator checks values, not relationships. A real price attached to the wrong car passes.
+- Model years, mileage, colours, and bare web domains are not checked.
+- A customer's own stated budget passes only if the model also put it in the search filter.
+- Rejected text is not stored, only its kinds, so labelling false positives needs a deliberate run.
+- Accuracy figures come from 30 messages that were also used for tuning, so they are optimistic.
+
+## Confirmation-gated writes
+
+Pinned by strict expected-failure tests in `tests/writes/test_failure_injection.py`:
+
+- A 500 returned after the platform really saved a booking is reported as `SlotUnbookable`, so the
+  customer is told to choose another time while a booking exists.
+- A customer who moves on from an unknown write can make a second booking for another time. The
+  first may also exist, and parked workflows are never reconciled.
+- A slow amend or cancel can land after its read-back, so the customer is told it did not apply when
+  it did.
+
+Also known:
+
+- A change of service in an amendment is refused for now (D-022, departing from D-009).
+- A keyed write older than 15 minutes is left unknown after a restart. "Check again" resends it, and
+  that resend can create the booking if the original never landed, because the platform has no
+  read-only way to look up a request by key.
+- Only one server process may run. Recovery assumes nothing else is in flight.
+- Crash tests cover process death, not power loss or disk failure.
+- The confirmation token is stored unhashed in the session row, so reading the database and holding
+  the session cookie would be enough to use it.
+- Customers cannot resume a parked workflow, and prompts still use internal slot names.
+
+## Workflows
+
+- The pipeline around the machine is only partly built. The chat turn, LLM interpretation,
+  composition, grounding, and the widget do not exist yet.
+- A value counts as `user` if it appears in the customer's message, even if they meant something
+  else by it. Internal IDs do not match customer wording, so they stay `inferred` and get confirmed.
+- A reference locked in another session also locks the current session until that lock ends, so a
+  different booking cannot be looked up during that time.
+- The exhaustive walk uses a fixed event catalogue at one fixed time. Time-based behaviour is
+  covered by named tests and the random sequences, not by the walk.
+
 ## Local LLM
 
-- A typical turn takes about 7 seconds on an M1 Pro, longer after a regeneration (D-019).
+- A model turn takes a median of 6.8 seconds on an M1 Pro, longer after a regeneration (D-023).
 - Customers share one local model, so simultaneous chats queue (D-019).
 - Replies can be plainer, and template fallback more common, than with a stronger hosted model.
 - Running the full experience needs Ollama and about 6.6 GB for the model. Without them the app
@@ -47,7 +128,6 @@ so these are the gaps already known from `docs/PLATFORM-NOTES.md` and `docs/DECI
 
 ## Not yet verified
 
-- The webchat's own `docker compose` service, which does not exist yet (D-018).
 - The widget's behaviour inside the vehicle dialog, which needs a real browser (D-015).
 - Whether platform slots are true UTC or UK wall-clock times (D-010).
-- Reliability of Colima on macOS 27, beyond one successful run (D-018).
+- Reliability of Colima on macOS 27, beyond two successful runs (D-018).

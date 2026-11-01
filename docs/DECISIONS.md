@@ -585,8 +585,8 @@ Docker is installed.
 - Docker Desktop was not used. Homebrew has no packages for macOS 27, so Colima, Lima, the Docker
   CLI, Compose, and Buildx came from official releases and sit under the user's home folder, with
   no admin rights needed.
-- `docker compose up --build -d` works for the two existing services. The webchat service has yet
-  to be added and proven.
+- `docker compose up --build -d` runs all three services. A real chat turn was checked from the
+  container through the local model to the platform, on 2026-11-01.
 - Colima must be running first: `colima start` after each reboot.
 
 **Revisit if:** port 4020 conflicts, or Colima proves unreliable on this macOS version.
@@ -643,3 +643,330 @@ a weaker model safe, because code decides, executes, and checks.
 
 **Revisit if:** a larger evaluation shows poor accuracy, turns feel too slow, or production needs
 more customers than one local model can serve.
+
+---
+
+## D-020: Dealership client retry policy
+
+**Date:** 2026-11-01. **Status:** accepted. The user set the design (typed client, domain outcomes,
+tests first) and asked for the retry reasoning. The policy itself was chosen while building.
+
+**Context:** a retry is only safe if the platform guarantees what a repeat does, and that differs by
+call. The platform's `retryable` flag is wrong for the released-slot 500 (`PLATFORM-NOTES.md` 3.7).
+`PATCH` and `DELETE` accept no idempotency key.
+
+**Options:**
+
+- **A. Trust `retryable`.** Simple, but it retries a failure that can never succeed.
+- **B. Never retry writes.** Safe, but any brief network fault makes a customer's booking unknown.
+- **C. A retry rule per kind of call, based on what the platform guarantees.**
+
+**Choice:** C.
+
+| Kind of call | Retried on | Never retried on |
+| ------------ | ---------- | ---------------- |
+| Reads and lookup | Connection failure, lost response, 429, 500, 502, 503, 504 | 4xx, malformed 2xx |
+| Keyed creates | The same, with the same key and body | 4xx, malformed 2xx |
+| Bookings | The same, except 500 | 500, 4xx, malformed 2xx |
+| `PATCH`, `DELETE` | Failed connection only | Anything that may have arrived; re-read instead |
+
+Three attempts, starting at 0.2 seconds, doubling to a 1 second cap, with up to 25% jitter, and a
+12 second limit across one call's retries. `Retry-After` is honoured up to that cap.
+
+**Why:** each rule follows a platform guarantee. A key makes a repeat harmless. Without one, only
+proof that the request never arrived makes a repeat safe. A 4xx will not change on a repeat, and a
+malformed 2xx means the platform did answer, so resending adds risk and no information.
+
+**Consequences:**
+
+- A booking 500 becomes `SlotUnbookable` after one attempt. The platform rolls back on that error
+  in its source, but one 500 alone cannot prove nothing was saved (`LIMITATIONS.md`).
+- A write ends as `WriteOutcomeUnknown` if retries run out or the answer is unreadable, and chat
+  must claim neither success nor failure. A create can be resubmitted later with the same request.
+- `WriteNotSent` is used only when every attempt failed to connect.
+- Cancel reads the booking first, because a repeat `DELETE` looks like a first one.
+- Past slots, and slots for another car, are refused before any request is sent.
+- The API key is sent only on calls that need it.
+- Personal details and `monthlyPricePence` are not modelled, so they cannot reach the LLM (D-012).
+
+**Revisit if:** the platform fixes the released-slot bug, adds keys to `PATCH` and `DELETE`, or
+retries prove too slow for a chat turn.
+
+---
+
+## D-021: Workflow invariants
+
+**Date:** 2026-11-01. **Status:** accepted. The user reviewed these invariants before any code was
+written.
+
+**Context:** workflows carry customer data into platform writes, and booking retrieval must be
+unreachable without verification. D-002 chose hand-rolled tables, and these are the rules those
+tables must obey.
+
+**Options raised in review:**
+
+- Inferred values blocked for writes only, or for every platform call.
+- Page context confirmed separately, or validated and shown on the final card.
+- Format errors counted as failed attempts, or not.
+- Second task mid-workflow: stack workflows, replace silently, or ask first.
+- Sales enquiry and vehicle interest left out, or added.
+
+**Choice:** block inferred values for every call; validate page context with no separate
+confirmation; do not count format errors or outages; allow one active workflow, asking before
+abandoning it; add both workflows. Ten workflows now exist.
+
+**Invariants:**
+
+Transitions:
+
+- **T1.** Transitions are a pure function of session and event, with no I/O.
+- **T2.** An event with no entry is rejected and the session stays exactly as it was.
+- **T3.** Terminal states are final. A new request starts a new workflow.
+- **T4.** Only code creates events. The LLM can only propose slot values.
+- **T5.** Every client outcome maps to one event, or is declared read-only. A test enforces this.
+- **T6.** Every non-terminal state can reach a terminal state.
+
+Slots:
+
+- **S1.** A slot stores its value, provenance, and time set. Provenance is `user`, `page_context`,
+  or `inferred`.
+- **S2.** Code assigns provenance. An LLM value counts as `user` only if the customer's own message
+  contains it.
+- **S3.** `inferred` values cannot be used in any platform call until confirmed.
+- **S4.** `page_context` values must be validated against the platform before use.
+- **S5.** A value reused from an earlier workflow starts as `inferred`.
+- **S6.** No write starts with a required slot missing or unconfirmed.
+
+Corrections:
+
+- **C1.** A customer correction replaces value and provenance outright.
+- **C2.** A correction clears the slots that depended on the old value.
+- **C3.** A correction voids any pending confirmation and returns to `collecting`.
+- **C4.** `inferred` or `page_context` cannot overwrite `user`. It is offered for confirmation.
+- **C5.** Corrections are refused once the customer has confirmed.
+
+Writes:
+
+- **W1.** A write comes only from `executing`, reached only by a confirm with a valid token.
+- **W2.** Tokens are single-use, and tied to the session and exact action. They exist only while
+  awaiting confirmation. One confirmation gives one write, except the two-step service change.
+- **W3.** Preconditions are rechecked live before the write. On failure, nothing is sent.
+- **W4.** `SlotTaken` and `SlotUnbookable` clear the slot and return to `collecting`.
+- **W5.** From `outcome_unknown`, a keyed write can only resend the stored request, and an unkeyed
+  write can only be read back. It never becomes `completed` without a platform result.
+- **W6.** `completed` requires a success outcome from the platform.
+- **W7.** A service change books the new slot first, under one confirmation. A failed cancel ends
+  in a dedicated two-bookings state.
+
+Verification:
+
+- **V1.** Verified state is reachable only through a real `WorkshopBookingFound`.
+- **V2.** Amend and cancel need verification for that exact booking.
+- **V3.** The four identity values are entered for this attempt, never pass through the LLM, and
+  are not stored.
+- **V4.** The booking ID stays server-side and is never shown to the LLM.
+- **V5.** Five failures lock the session or reference for 15 minutes. The reference limit spans
+  sessions and stores only a keyed hash.
+- **V6.** While locked, no lookup is sent, even with correct details.
+- **V7.** Verification ends after 15 minutes without activity. It survives a refresh within that
+  window, and does not interrupt a write in progress.
+- **V8.** Verification covers one booking. A different reference needs a new check.
+- **V9.** A cancelled booking can be viewed, but not amended or cancelled again.
+- **V10.** A failed match says nothing about which detail was wrong.
+
+**Why:** these rules make the unsafe states unreachable by construction, rather than relying on the
+LLM or the pipeline to behave.
+
+**Consequences:**
+
+- An inferred site cannot even be used to look up slots, which adds a confirmation step.
+- `usable_values` is the only way the pipeline may read slots for a platform call.
+- A workflow in `outcome_unknown` is parked on `unresolved` if the customer moves on, so a write
+  that may have happened is not lost.
+- Hypothesis is a development dependency.
+
+**Revisit if:** the extra confirmation step feels too heavy in real conversations, or workflows
+start to need nesting (D-002).
+
+---
+
+## D-022: Confirmation-gated writes and recovery
+
+**Date:** 2026-11-01. **Status:** accepted. The design follows D-003 and D-004, and the user set
+the requirements. Choices below were made while building.
+
+**Context:** a write can be interrupted at any point, and the customer must never be told something
+untrue or be charged twice for one click.
+
+**Options for surviving a crash:**
+
+- **A. Record the outcome after the write.** Simple, but a crash mid-write leaves no trace of it.
+- **B. Commit the exact request before it leaves the process, then settle it afterwards.**
+- **C. A separate background worker owning all writes.** Strongest, but a new moving part.
+
+**Choice:** B, with the write run as a detached task, so a closed tab cannot cancel it.
+
+**Why:** the request is on disk before it can reach the platform, so recovery always knows what was
+attempted. A keyed create can be resent safely, and amend or cancel can be read back. C is not
+justified for a single-process app.
+
+**Rules:**
+
+- The state change, events, and stored request commit in one transaction under `BEGIN IMMEDIATE`,
+  so exactly one click claims a token.
+- Writes are checked twice against live data: to render the block, and just before sending.
+- Once a write's outcome is unknown, a failed resend proves nothing, so it stays unknown. It can
+  only settle on an answer from the platform.
+- After an unknown result, the server tries twice more, then asks the customer to check again.
+- Recovery runs once at start-up, before traffic. It does not resend keyed writes last touched over
+  15 minutes ago, because the customer may have moved on.
+- Identity lookups interrupted by a crash return to verification, because the values are not stored.
+- Tokens are never logged, and the model never sees a token or booking ID.
+
+**Consequences:**
+
+- **Departure from D-009:** a change of service in an amendment is refused for now. The replacement
+  booking needs the customer's contact details, which the client deliberately does not expose. The
+  machine supports it (W7), but it is not connected.
+- Three gaps remain (`LIMITATIONS.md`), each pinned by a strict expected-failure test.
+- Only one server process may run: recovery assumes nothing else is in flight.
+
+**Revisit if:** the app runs more than one process, or the platform gains a way to look up a request
+by its idempotency key, which would close most of the remaining gaps.
+
+---
+
+## D-023: LLM layer, grounding, and degraded mode
+
+**Date:** 2026-11-01. **Status:** accepted. The user set the design. Changes to earlier decisions and
+choices made while building are recorded here.
+
+**Context:** the model is local, slow, and sometimes wrong in ways no value check can see. A real
+30-turn run found invented dates, false claims with no numbers, and turns of up to 248 seconds.
+
+**Options for the fallback after a failed repair:**
+
+- **A. A keyword interpreter.** D-006 already rejected this.
+- **B. No interpretation: a safe result plus buttons.**
+
+**Options for hours and empty results:**
+
+- **A. Let the model write them, and validate.** More natural, but the validator cannot see which
+  department a real time belongs to.
+- **B. Code writes them, and the model is not called.**
+
+**Choice:** B in both cases, with an OpenAI-compatible adapter set by `LLM_BASE_URL`, `LLM_API_KEY`,
+and `LLM_MODEL`.
+
+**Why:** a real run told a customer that a closed service department would open on a bank holiday,
+using genuine times from the sales row. `CLAUDE.md` says the model never supplies hours, so the fix
+was to stop asking it. Skipping the model also cut these turns to about 3 seconds.
+
+**Changes to earlier decisions:**
+
+- **D-019:** the adapter now uses the OpenAI-compatible API, not Ollama's native API. Local Ollama
+  stays the default endpoint, and needs `LLM_REASONING_EFFORT=none`, or replies come back empty.
+- **D-005:** a correct value passes however it is written. Rejecting bare values would mostly punish
+  a model that drops placeholders. Unknown placeholders are still rejected.
+- **D-019's 7-second estimate:** now measured at a median of 6.8 seconds per model turn.
+
+**Consequences:**
+
+- The model never receives vehicle descriptions, customer contact details, tokens, or booking IDs.
+- Prompts are kept short because this Mac reads about 20 tokens a second uncached.
+- Each model call has a hard 20-second limit, then the turn uses its template.
+- A circuit breaker sends later turns straight to buttons during an outage or rate limit.
+- Notices are added by code after the text, and offer figures are withheld if no notice is available.
+
+**Revisit if:** a larger evaluation shows the validator rejecting more than 10% of good replies, or
+a stronger hosted model makes richer composition worthwhile.
+
+---
+
+## D-024: First two scaling fixes
+
+**Date:** 2026-11-01. **Status:** accepted. The user chose "whichever is free of cost".
+
+**Context:** `docs/SCALING.md` lists fixes for five bottlenecks, to build only two.
+
+**Options:**
+
+- **A. Platform gate and read cache.** Free. Stops real failures at 10x.
+- **B. Per-session ordering.** Free. Delivers a behaviour D-001 promised.
+- **C. A paid LLM provider.** Biggest bottleneck, but costs money and sends messages off the machine.
+- **D. Postgres.** Free software, but adds a service to run, with no need at this load.
+- **E. SSE limits.** Nothing to fix until SSE exists.
+
+**Choice:** A and B.
+
+**Why:** both cost only code, and they were already the recommendation. C fails the user's condition.
+
+**Consequences:**
+
+- A burst of 200 reads failed 26 times without the gate and never with it, on the real platform.
+- Vehicle cards can be up to 30 seconds stale, and writes still recheck live data.
+- Pre-write hours checks skip the cache, so a cached copy can never decide a write.
+- A customer sending more than 3 waiting turns gets an honest "still working" reply.
+- Both fixes work within one process, which matches D-022's single-process rule.
+
+**Revisit if:** the app runs more than one process, or cached listings confuse customers.
+
+---
+
+## D-025: Widget build order and streaming
+
+**Date:** 2026-11-01. **Status:** accepted. The user chose the thin slice, then set the widget's
+specification.
+
+**Context:** the widget, SSE, and saved transcripts were all missing, and the riskiest assumption
+(chat inside the vehicle dialog) could only be tested in a real browser.
+
+**Options:**
+
+- **A. Server first.** Build transcripts and SSE, then the widget. No rework, but problems appear late.
+- **B. Widget first.** Quick to see, but message handling is reworked for streaming.
+- **C. A thin slice through all three, then widen it.**
+
+**Choice:** C, using Vite library mode, React in Shadow DOM, and one script tag. The widget moves
+itself into an open dialog (D-015), which real-browser tests confirm works.
+
+**Why:** the unknowns were in how the pieces fit together, so the path had to work end to end first.
+
+**Consequences:**
+
+- Stream events are stored with rising IDs, so `GET /api/chat/stream` with `Last-Event-ID` replays
+  what was missed, then follows a running turn.
+- Turns run detached, so a refresh cannot lose a reply.
+- Stored replies and events exclude the view, because a view can hold a confirmation token. The
+  widget reads the current view separately.
+- `View` now lists the fields it needs, with choices from live data, so forms are server-driven.
+- The inspector is off unless `WEBCHAT_DEV_INSPECTOR=1` on the server and `?inspector=1` in the URL.
+  With the server flag off, its route does not exist. It shows provenance, not slot values.
+- The widget needs a build step. `widget.js` is generated, not committed.
+
+**Revisit if:** dialog handling breaks on another browser, or the website gains more modal layers.
+
+---
+
+## D-026: Customer messages stay local, and booking 500s are never resent
+
+**Date:** 2026-11-01. **Status:** accepted. Both were the user's decisions.
+
+**Context:** two questions were left open by D-019, D-020, and `docs/SCALING.md`.
+
+**Options:**
+
+- **Messages:** keep them on this machine, or allow a paid hosted model.
+- **Booking 500:** never resend it, or resend once with the same key.
+
+**Choice:** messages stay on the machine, and a booking 500 is not resent.
+
+**Why:** these were the user's calls. Keeping messages local protects customers, and D-019 chose
+that for the same reason. Not resending keeps D-020's rule simple.
+
+**Consequences:**
+
+- LLM capacity stays limited to what local hardware can do, so `docs/SCALING.md` section 1 stands.
+- The gap where a 500 follows a saved booking stays open, so the strict test for it stays.
+
+**Revisit if:** volume outgrows local hardware, or a saved booking is ever reported as taken.

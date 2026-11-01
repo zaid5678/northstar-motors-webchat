@@ -33,5 +33,28 @@ services:
       dealership-platform:
         condition: service_healthy
 
+  webchat:
+    build:
+      context: ./webchat
+    environment:
+      NORTHSTAR_API_KEY: northstar-local-development
+      WEBCHAT_PEPPER: ${WEBCHAT_PEPPER:-local-development-only}
+      NORTHSTAR_PLATFORM_URL: http://dealership-platform:4010
+      WEBCHAT_DATABASE_URL: sqlite:////data/webchat.sqlite3
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen3.5:9b}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-none}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "4020:4020"
+    volumes:
+      - northstar-webchat-data:/data
+    depends_on:
+      dealership-platform:
+        condition: service_healthy
+
 volumes:
   northstar-platform-data:
+  northstar-webchat-data:
