@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { onThisHost } from "./api";
 import type { Api, Block, Button, ChatMessage, Inspection, View } from "./api";
 import { Form } from "./Form";
 import { Inspector } from "./Inspector";
@@ -36,8 +37,8 @@ function Message({ message, onPress }: { message: ChatMessage; onPress?: (action
       <div className={`bubble ${message.role}`}>{message.text}</div>
       {message.notices?.map((notice) => <div className="notice" key={notice}>{notice}</div>)}
       {message.vehicles?.map((card) => (
-        <a className="card" href={card.url} key={card.id}>
-          {card.image && <img src={card.image} alt="" />}
+        <a className="card" href={onThisHost(card.url, window.location.hostname)} key={card.id}>
+          {card.image && <img src={onThisHost(card.image, window.location.hostname)} alt="" />}
           <span>
             <strong>{card.title}</strong>
             {card.price} · {card.availability}

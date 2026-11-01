@@ -13,4 +13,5 @@ dealership-platform/data/
 *.egg-info/
 .hypothesis/
 node_modules/
+webchat/.local/
 webchat/src/northstar_webchat/static/widget.js

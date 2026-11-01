@@ -187,6 +187,10 @@
     </footer>
 
     <script type="module" src="/src/app.js"></script>
-    <script src="http://localhost:4020/widget.js" defer></script>
+    <script>
+      const chat = document.createElement("script");
+      chat.src = `${location.protocol}//${location.hostname}:4020/widget.js`;
+      document.body.append(chat);
+    </script>
   </body>
 </html>

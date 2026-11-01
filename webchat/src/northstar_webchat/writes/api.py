@@ -29,6 +29,11 @@ RESUME_POLL_SECONDS = 0.1
 RESUME_LIMIT_SECONDS = 60.0
 TURN_FAILED = "Sorry, something went wrong with that message. Please try again."
 FINAL_STATUSES = ("completed", "failed", "unknown", "two_bookings")
+# The website on any local or private address, so a phone on the same network works.
+LOCAL_ORIGINS = (
+    r"^https?://(localhost|127\.0\.0\.1|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}"
+    r"|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}):4173$"
+)
 WIDGET = Path(__file__).resolve().parent.parent / "static" / "widget.js"
 
 
@@ -109,6 +114,7 @@ def create_app(
         app.add_middleware(
             CORSMiddleware,
             allow_origins=[allowed_origin],
+            allow_origin_regex=LOCAL_ORIGINS,
             allow_credentials=True,
             allow_methods=["GET", "POST"],
             allow_headers=["Content-Type", "Last-Event-ID"],

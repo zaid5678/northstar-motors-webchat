@@ -59,6 +59,13 @@ export interface Transcript {
 }
 
 export type Inspection = Record<string, unknown>;
+
+/** The server names `localhost`, which is wrong for a customer using another address. */
+export function onThisHost(url: string, hostname: string): string {
+  const parsed = new URL(url);
+  if (parsed.hostname === "localhost") parsed.hostname = hostname;
+  return parsed.toString();
+}
 type OnStage = (stage: string) => void;
 
 class Tracker {

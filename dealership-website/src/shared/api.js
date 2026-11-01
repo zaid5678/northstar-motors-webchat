@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:4010";
+const API_BASE_URL = `${location.protocol}//${location.hostname}:4010`;
 
 export async function get(path, parameters = {}) {
   const url = new URL(path, API_BASE_URL);

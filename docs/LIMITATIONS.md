@@ -58,6 +58,20 @@ Against the brief, these do not exist yet:
 - Comparing vehicles, and offers shown as links, because the website has no offer pages.
 - Structured operational logging and metrics, beyond the event log and access logs.
 
+## Running on other computers
+
+Checked on 2026-11-01 from a fresh GitHub clone with no Docker cache or model: the build, all three
+services, a confirmed callback with no model, and every automated check. All of that ran on one
+Apple Silicon Mac, so:
+
+- Windows and Linux hosts have not been tried. Docker should behave the same on them.
+- The image builds and starts for Intel and AMD chips, but only under emulation, and the full stack
+  was not run that way.
+- The Linux Ollama setup in `webchat/README.md` has not been tried.
+- AI reply speed depends on the computer. Only one machine has been measured.
+- The website loads the chat from `localhost`, so it works in a browser on the same computer only.
+- The root `README.md` does not mention port 4020, and was left unchanged on request.
+
 ## Widget
 
 - Tested in Chromium only. Safari and Firefox have not been tried, and neither has a real screen

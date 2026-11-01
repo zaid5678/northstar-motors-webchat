@@ -1,11 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Api } from "../src/api";
+import { Api, onThisHost } from "../src/api";
 
 function stream(...frames: string[]): Response {
   return new Response(frames.join(""), { headers: { "Content-Type": "text/event-stream" } });
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("addresses", () => {
+  it("keeps a link on the address the customer is using", () => {
+    expect(onThisHost("http://localhost:4173/?vehicle=veh-001", "192.168.1.20")).toBe(
+      "http://192.168.1.20:4173/?vehicle=veh-001",
+    );
+  });
+
+  it("leaves other sites alone", () => {
+    expect(onThisHost("https://example.com/a", "192.168.1.20")).toBe("https://example.com/a");
+  });
+});
 
 describe("resuming a stream", () => {
   it("sends the last event ID, so an old reply is not replayed", async () => {

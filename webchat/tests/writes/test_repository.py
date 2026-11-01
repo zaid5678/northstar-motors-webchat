@@ -186,4 +186,4 @@ def test_nothing_outside_persistence_imports_sqlalchemy() -> None:
     source = Path(__file__).resolve().parents[2] / "src" / "northstar_webchat"
     for path in source.rglob("*.py"):
         if "persistence" not in path.parts and "migrations" not in path.parts:
-            assert "sqlalchemy" not in path.read_text()
+            assert "sqlalchemy" not in path.read_text(encoding="utf-8")

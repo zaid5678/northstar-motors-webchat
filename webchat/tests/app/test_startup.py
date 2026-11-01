@@ -44,7 +44,7 @@ def test_the_database_is_migrated_on_start(tmp_path: Path) -> None:
 
 
 def test_required_environment_names_are_documented_without_values() -> None:
-    example = (ROOT / "webchat" / ".env.example").read_text()
+    example = (ROOT / "webchat" / ".env.example").read_text(encoding="utf-8")
     for name in ["NORTHSTAR_API_KEY", "WEBCHAT_PEPPER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"]:
         assert name in example
     assert "northstar-local-development" not in example
@@ -54,11 +54,11 @@ def test_the_website_does_not_contain_the_api_key() -> None:
     website = ROOT / "dealership-website"
     for path in website.rglob("*"):
         if path.is_file() and path.suffix in {".js", ".html", ".css"}:
-            text = path.read_text(errors="ignore")
+            text = path.read_text(encoding="utf-8", errors="ignore")
             assert "northstar-local-development" not in text
             assert "X-API-Key" not in text
 
 
 def test_no_webchat_source_contains_a_secret_value() -> None:
     for path in (ROOT / "webchat" / "src").rglob("*.py"):
-        assert "northstar-local-development" not in path.read_text()
+        assert "northstar-local-development" not in path.read_text(encoding="utf-8")

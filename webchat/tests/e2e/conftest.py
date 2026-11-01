@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
 
+from northstar_webchat.writes.api import WIDGET
+
 ROOT = Path(__file__).resolve().parents[3]
 WEBCHAT = ROOT / "webchat"
 SITE = "http://localhost:4173"
@@ -41,6 +43,8 @@ def wait_for(url: str) -> None:
 # every async test that runs after these.
 @pytest.fixture(scope="package")
 def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    if not WIDGET.is_file():
+        pytest.skip("Build it first: cd webchat/widget && npm ci && npm run build")
     busy = [port for port in (4010, 4173, 4020) if port_in_use(port)]
     if busy:
         pytest.skip(f"ports in use: {busy}")

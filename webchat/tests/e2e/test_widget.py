@@ -325,3 +325,18 @@ class TestInspector:
         panel = page.get_by_role("region", name="Developer inspector")
         expect(panel).to_contain_text("StockSearched")
         expect(panel).to_contain_text("model")
+
+
+class TestOtherAddresses:
+    """Not everyone reaches the site as `localhost`: a phone on the same network never does."""
+
+    def test_the_whole_site_and_chat_work_from_another_address(self, page: Page) -> None:
+        page.goto("http://127.0.0.1:4173")
+        expect(page.locator("#vehicle-grid article").first).to_be_visible()
+        launcher(page).click()
+        send(page, "any hybrids?")
+        link = log(page).get_by_role("link").first
+        expect(link).to_be_visible()
+        assert (link.get_attribute("href") or "").startswith("http://127.0.0.1:4173/?vehicle=")
+        image = log(page).locator("img").first
+        assert (image.get_attribute("src") or "").startswith("http://127.0.0.1:4010/assets/")

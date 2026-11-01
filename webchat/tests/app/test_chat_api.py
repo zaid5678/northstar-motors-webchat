@@ -14,7 +14,7 @@ from northstar_webchat.dealership import DealershipClient
 from northstar_webchat.llm.scripted import ScriptedLLM
 from northstar_webchat.llm.types import Message
 from northstar_webchat.turns.engine import TurnEngine
-from northstar_webchat.writes.api import COOKIE, create_app
+from northstar_webchat.writes.api import COOKIE, WIDGET, create_app
 from northstar_webchat.writes.service import WriteService
 
 from ..writes.conftest import ready_test_drive, token_of
@@ -183,12 +183,33 @@ class TestBrowserAccess:
         assert response.headers["access-control-allow-origin"] == ORIGIN
         assert response.headers["access-control-allow-credentials"] == "true"
 
+    @pytest.mark.parametrize(
+        "origin",
+        ["http://127.0.0.1:4173", "http://192.168.1.20:4173", "http://10.0.0.5:4173"],
+    )
+    async def test_the_website_works_from_a_local_address(
+        self, http: httpx.AsyncClient, origin: str
+    ) -> None:
+        response = await http.get("/api/chat/transcript", headers={"Origin": origin})
+        assert response.headers["access-control-allow-origin"] == origin
+
+    @pytest.mark.parametrize(
+        "origin",
+        ["http://evil.example:4173", "http://192.168.1.20:9999", "http://192.168.1.20.evil.example:4173"],
+    )
+    async def test_other_addresses_may_not(self, http: httpx.AsyncClient, origin: str) -> None:
+        response = await http.get("/api/chat/transcript", headers={"Origin": origin})
+        assert "access-control-allow-origin" not in response.headers
+
     async def test_other_websites_may_not(self, http: httpx.AsyncClient) -> None:
         response = await http.get(
             "/api/chat/transcript", headers={"Origin": "https://evil.example"}
         )
         assert "access-control-allow-origin" not in response.headers
 
+    @pytest.mark.skipif(
+        not WIDGET.is_file(), reason="Build it first: cd webchat/widget && npm ci && npm run build"
+    )
     async def test_the_widget_is_served_as_javascript(self, http: httpx.AsyncClient) -> None:
         response = await http.get("/widget.js")
         assert response.status_code == 200
