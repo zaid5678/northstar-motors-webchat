@@ -92,6 +92,10 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 
 ## LLM and grounding
 
+- Replies with no tool results are fixed text written by code (D-027), so greetings and small talk
+  feel repetitive, and the model cannot answer general questions such as "do you do finance?".
+- The restricted-topic list (D-027) is a short list of words, so a claim in other words can pass on a
+  turn that does have tool results.
 - The validator checks values, not relationships. A real price attached to the wrong car passes.
 - Model years, mileage, colours, and bare web domains are not checked.
 - A customer's own stated budget passes only if the model also put it in the search filter.

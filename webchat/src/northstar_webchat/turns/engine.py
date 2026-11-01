@@ -42,6 +42,10 @@ FINANCE_WITHHELD = "We can't show finance offers right now. Please try again sho
 DEGRADED = "I'm having trouble understanding messages right now. These options still work:"
 NOT_UNDERSTOOD = "I didn't quite catch that. Here's what I can help with:"
 GREETING = "I can help you find a car, book a test drive or service, or contact a dealership."
+NO_CAR = (
+    "I can check a specific car from its page on our website. Open the car you're interested in "
+    "and ask me there, or browse our cars below."
+)
 NO_STOCK = "I couldn't find any cars matching that. Try changing what you're looking for."
 NO_OFFERS = "There are no published offers for that right now."
 BUSY = "I'm still working on your last message. Please wait a moment."
@@ -375,8 +379,10 @@ class TurnEngine:
             return await self._start(session_id, text, reading, page_vehicle)
         if intent is Intent.VEHICLE_SEARCH:
             return await self._search(session_id, text, reading)
-        if intent is Intent.VEHICLE_STATUS and page_vehicle:
-            return await self._status(session_id, text, page_vehicle)
+        if intent is Intent.VEHICLE_STATUS:
+            if page_vehicle:
+                return await self._status(session_id, text, page_vehicle)
+            return await self._menu(session_id, NO_CAR)
         if intent is Intent.OPENING_HOURS:
             return await self._hours(session_id, reading.dealership)
         if intent is Intent.NEW_CAR_OFFERS:
@@ -384,13 +390,9 @@ class TurnEngine:
             return await self._offers(session_id, text, filters.make if filters else None)
         if intent is Intent.SERVICE_TYPES:
             return await self._services(session_id, text)
-        return await self._written(
-            session_id,
-            text,
-            outcomes=[],
-            data={"can_help_with": [action.label for action in MENU]},
-            template=GREETING,
-        )
+        # Deny by default (D-027): with no tool results there is nothing to check a reply against,
+        # and a value check cannot catch a claim such as "no credit check". Code writes this one.
+        return await self._menu(session_id, GREETING)
 
     async def _start(
         self, session_id: str, text: str, reading: Interpretation, page_vehicle: str | None

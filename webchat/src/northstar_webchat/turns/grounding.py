@@ -37,6 +37,7 @@ class Facts(BaseModel):
     unavailable_models: set[str] = set()
     attributes: set[str] = set()
     has_vehicles: bool = False
+    offers_listed: bool = False
     placeholders: dict[str, str] = {}
 
 
@@ -102,6 +103,7 @@ def facts_from(outcomes: Sequence[o.Outcome], *, site_url: str) -> Facts:
 def _add_outcome(facts: Facts, outcome: o.Outcome) -> None:
     if isinstance(outcome, (o.OffersListed, o.OfferFound)):
         offers = outcome.offers if isinstance(outcome, o.OffersListed) else [outcome.offer]
+        facts.offers_listed = facts.offers_listed or bool(offers)
         for offer in offers:
             facts.prices.update({offer.monthly_price_pence, offer.upfront_payment_pence})
             if offer.apr is not None:
@@ -180,6 +182,13 @@ ATTRIBUTE = re.compile(
     re.IGNORECASE,
 )
 TIME_CLAIM = re.compile(r"\b(?:open|closed|slots?|appointments?|come in|collect)\b", re.IGNORECASE)
+# Topics only code may speak about: notices and published offers carry them. A model that mentions
+# one outside a question or a refusal is inventing terms.
+RESTRICTED = re.compile(
+    r"\b(warrant(?:y|ies)|financ(?:e|ing)|credit|loans?|deliver(?:y|ies|ed|s)?|insur(?:ance|ed)"
+    r"|discount(?:s|ed)?|deposits?|interest rates?|(?<!feel )free)\b",
+    re.IGNORECASE,
+)
 NEGATED = re.compile(r"\b(?:not|never|cannot|no longer|unable)\b|n['’]t\b", re.IGNORECASE)
 AVAILABLE = re.compile(r"\b(?:available|in stock)\b", re.IGNORECASE)
 PROMISE = re.compile(
@@ -299,6 +308,11 @@ def _claims(text: str, facts: Facts) -> Iterable[Violation]:
             for model in facts.unavailable_models:
                 if model in lowered:
                     yield Violation(kind="availability", value=sentence.strip())
+        if not negated and not sentence.rstrip().endswith("?"):
+            for match in RESTRICTED.finditer(sentence):
+                finance = match[1].casefold().startswith("financ")
+                if not (finance and facts.offers_listed):
+                    yield Violation(kind="topic", value=match[0])
         if not negated and PROMISE.search(sentence):
             yield Violation(kind="promise", value=sentence.strip())
         if not negated and not facts.confirmed and BOOKED.search(sentence):

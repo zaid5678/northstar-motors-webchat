@@ -970,3 +970,39 @@ that for the same reason. Not resending keeps D-020's rule simple.
 - The gap where a 500 follows a saved booking stays open, so the strict test for it stays.
 
 **Revisit if:** volume outgrows local hardware, or a saved booking is ever reported as taken.
+
+---
+
+## D-027: Deny by default for replies with no facts
+
+**Date:** 2026-11-01. **Status:** accepted. The review found it, and the user approved the fix.
+
+**Context:** the validator checks values against tool results. With no tool results, such as a
+greeting or a question about finance, nothing was checked. An audit with a scripted model passed
+7 of 7 invented claims, including "no credit check", "open on Sunday", and "available right now".
+
+**Options:**
+
+- **A. Deny by default.** A turn with no tool results gets code-written wording, and the model is
+  not asked to write it.
+- **B. Check claims by topic.** Keep model text, and reject unsupported claims about finance, hours,
+  warranty, and similar. Leaky, because there are endless claims.
+- **C. Both.**
+
+**Choice:** C, with A as the main protection and a small topic check as a second layer.
+
+**Why:** B alone can only block topics we thought of. A removes the risk where there is nothing to
+check against, and B still covers the model wandering off-topic when it does have results.
+
+**Consequences:**
+
+- Greetings, thanks, and small talk now get the same fixed sentence, which is less natural. A
+  question about a car with no car in hand gets a fixed explanation to open its page.
+- These turns make one model call, not two, and take about 3 seconds instead of about 6.
+- The model may not mention warranty, finance, credit, loans, delivery, insurance, discounts,
+  deposits, interest rates, or "free" outside a question or a refusal. "Finance" is allowed when
+  published offers are listed. Anything else falls back to the template.
+- Real run, 30 turns: 0 replies wrongly rejected, and 5 greeting-type turns now use fixed text.
+
+**Revisit if:** customers find the fixed wording off-putting. A safer way to add variety is a
+small set of reviewed phrasings chosen by code, not model text.
