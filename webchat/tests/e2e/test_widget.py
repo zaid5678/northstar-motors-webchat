@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
-from playwright.sync_api import Locator, Page, expect
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Locator, Page, Route, expect
 
 pytestmark = pytest.mark.e2e
 
@@ -273,13 +276,26 @@ class TestStates:
         expect(box(page)).to_be_enabled()
 
     def test_loading_is_announced(self, page: Page) -> None:
+        """On a slow machine the first page can still be loading when the hold starts, so every
+        held request is released, not just the first."""
         held = []
-        page.route("**/api/chat/transcript", lambda route: held.append(route))
+        released = []
+
+        def hold(route: Route) -> None:
+            if released:
+                route.continue_()
+            else:
+                held.append(route)
+
+        page.route("**/api/chat/transcript", hold)
         page.reload()
         launcher(page).click()
         expect(page.get_by_role("status")).to_contain_text("Loading")
         expect(box(page)).to_be_disabled()
-        held[0].continue_()
+        released.append(True)
+        for route in held:
+            with contextlib.suppress(PlaywrightError):
+                route.continue_()
         expect(box(page)).to_be_enabled()
         page.unroute("**/api/chat/transcript")
 

@@ -60,17 +60,18 @@ Against the brief, these do not exist yet:
 
 ## Running on other computers
 
-Checked on 2026-11-01 from a fresh GitHub clone with no Docker cache or model: the build, all three
-services, a confirmed callback with no model, and every automated check. All of that ran on one
-Apple Silicon Mac, so:
+`.github/workflows/ci.yml` runs on every push, on real Windows, Linux, and macOS machines with Intel
+and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every automated check,
+`run.py`, and Docker on Linux. Gaps:
 
-- Windows and Linux hosts have not been tried. Docker should behave the same on them.
-- The image builds and starts for Intel and AMD chips, but only under emulation, and the full stack
-  was not run that way.
+- Docker Desktop on Windows and macOS is not covered, because those build machines cannot run it.
+- Each machine's browser tests use Chromium only.
 - The Linux Ollama setup in `webchat/README.md` has not been tried.
 - AI reply speed depends on the computer. Only one machine has been measured.
-- The website loads the chat from `localhost`, so it works in a browser on the same computer only.
-- The root `README.md` does not mention port 4020, and was left unchanged on request.
+- Machines with no Docker, and no Python 3.11 or Node, cannot run it at all.
+- Old or 32-bit systems, and phones as a server, are not supported.
+- Ports 4010, 4173, and 4020 are fixed, as the brief and the platform set them.
+- The root `README.md` does not mention port 4020 or `run.py`, and was left unchanged on request.
 
 ## Widget
 
