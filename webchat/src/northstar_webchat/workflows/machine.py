@@ -795,6 +795,7 @@ READ_ONLY_OUTCOMES: tuple[type[o.Outcome], ...] = (
     o.DealershipFound,
     o.OpeningHoursFound,
     o.ServiceTypesListed,
+    o.WorkshopLocationsListed,
     o.BusinessInformationFound,
     o.TestDriveSlotsFound,
     o.TestDriveNotBookable,

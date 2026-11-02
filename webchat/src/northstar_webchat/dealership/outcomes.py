@@ -164,6 +164,11 @@ class OpeningHoursFound(Outcome):
     hours: OpeningHours
 
 
+class WorkshopLocationsListed(Outcome):
+    kind: Literal["workshop_locations_listed"] = "workshop_locations_listed"
+    locations: list[Dealership]
+
+
 class ServiceTypesListed(Outcome):
     kind: Literal["service_types_listed"] = "service_types_listed"
     service_types: list[ServiceType]

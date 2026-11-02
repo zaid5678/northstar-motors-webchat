@@ -118,6 +118,7 @@ async def test_every_catalogue_read_parses(client: DealershipClient) -> None:
     assert len(dealerships.dealerships) == 4
     assert isinstance(await client.get_dealership("northstar-bolton"), o.DealershipFound)
     assert isinstance(await client.list_service_types(), o.ServiceTypesListed)
+    assert isinstance(await client.list_workshop_locations(), o.WorkshopLocationsListed)
     assert isinstance(await client.get_business_information(), o.BusinessInformationFound)
     offers = await client.list_offers()
     assert isinstance(offers, o.OffersListed)

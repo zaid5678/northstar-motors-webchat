@@ -11,11 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Cookie, FastAPI, Header, HTTPException, Response
+import logging
+import traceback
+from collections.abc import Awaitable, Callable
+
+from fastapi import Cookie, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .. import ops
 from ..persistence.store import IN_FLIGHT
 from ..turns.engine import MENU, TurnEngine, TurnReply
 from ..workflows.types import SlotScalar
@@ -76,6 +81,20 @@ def _frame(event_id: int, name: str, data: dict[str, Any]) -> str:
     return f"id: {event_id}\nevent: {name}\ndata: {json.dumps(data)}\n\n"
 
 
+def _server_error(request: Request, error: Exception) -> None:
+    """By type and place only. An exception message can quote what a customer typed."""
+    frames = traceback.extract_tb(error.__traceback__)
+    where = f"{Path(frames[-1].filename).name}:{frames[-1].lineno}" if frames else None
+    ops.log(
+        "server_error",
+        level=logging.ERROR,
+        method=request.method,
+        path=request.url.path,
+        error=type(error).__name__,
+        where=where,
+    )
+
+
 def create_app(
     service: WriteService,
     engine: TurnEngine | None = None,
@@ -114,6 +133,18 @@ def create_app(
 
     app = FastAPI(title="Northstar Motors webchat", lifespan=lifespan)
     turns: set[asyncio.Task[None]] = set()
+
+    @app.middleware("http")
+    async def log_errors(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # Added before CORS, so CORS wraps it and an error response still carries its headers.
+        try:
+            return await call_next(request)
+        except Exception as error:
+            _server_error(request, error)
+            return JSONResponse({"detail": "Something went wrong."}, status_code=500)
+
     if allowed_origin:
         app.add_middleware(
             CORSMiddleware,
@@ -170,7 +201,9 @@ def create_app(
 
         @app.post("/api/chat/stream")
         async def stream(
-            body: ChatMessage, northstar_session: str | None = Cookie(default=None)
+            request: Request,
+            body: ChatMessage,
+            northstar_session: str | None = Cookie(default=None),
         ) -> StreamingResponse:
             """Progress, then the reply. The turn runs detached, so a refresh cannot lose it: the
             answer lands in the transcript whether or not this connection is still open."""
@@ -188,7 +221,8 @@ def create_app(
                     # No view here: it can hold a token, and this event is stored.
                     data = reply.model_dump(mode="json", exclude={"view"})
                     queue.put_nowait(emit(session, "reply", data))
-                except Exception:
+                except Exception as error:
+                    _server_error(request, error)
                     store.add_message(
                         session, "assistant", {"text": TURN_FAILED}, datetime.now(timezone.utc)
                     )

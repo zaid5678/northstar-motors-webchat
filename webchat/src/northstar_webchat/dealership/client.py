@@ -15,6 +15,7 @@ a retry may do depends on what the platform guarantees for that call, which `_Mo
 
 from __future__ import annotations
 
+import re
 import asyncio
 import json
 import random
@@ -30,6 +31,7 @@ from typing import Any, Literal, Self, TypeVar, cast
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from .. import ops
 from . import outcomes as o
 from .models import (
     LONDON,
@@ -132,6 +134,10 @@ def _error_of(response: httpx.Response) -> _ErrorDetail | None:
 
 def _encode(body: Mapping[str, Any]) -> bytes:
     return json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
+
+
+# A record's ID after its collection, as in /api/workshop-bookings/bk-1. "lookup" is a route.
+ID_IN_PATH = re.compile(r"(/api/[a-z-]+/)(?!lookup\b)[^/?]+")
 
 
 def _is_gateway_failure(response: httpx.Response) -> bool:
@@ -240,11 +246,25 @@ class DealershipClient:
                 detail = type(error).__name__
             exchange = _Exchange(response, maybe_delivered, attempt, detail)
             if attempt >= self._retry.max_attempts or not self._should_retry(mode, exchange):
-                return exchange
+                return self._logged(method, path, exchange, started)
             delay = self._delay(attempt, response)
             if self._monotonic() - started + delay >= self._retry.deadline:
-                return exchange
+                return self._logged(method, path, exchange, started)
             await self._sleep(delay)
+
+    def _logged(self, method: str, path: str, exchange: _Exchange, started: float) -> _Exchange:
+        """A failure the caller will see, after any retries. IDs are dropped from the path."""
+        response = exchange.response
+        if response is None or _is_gateway_failure(response):
+            ops.warn(
+                "platform_failure",
+                method=method,
+                path=ID_IN_PATH.sub(r"\1{id}", path),
+                attempts=exchange.attempts,
+                detail=exchange.detail,
+                ms=round((self._monotonic() - started) * 1000),
+            )
+        return exchange
 
     # Reads.
 
@@ -398,6 +418,12 @@ class DealershipClient:
             "list_service_types", "/api/service-types", ServiceType, ttl=REFERENCE_TTL
         )
         return found if not isinstance(found, list) else o.ServiceTypesListed(service_types=found)
+
+    async def list_workshop_locations(self) -> o.WorkshopLocationsListed | o.ReadFailure:
+        found = await self._list(
+            "list_workshop_locations", "/api/workshop-locations", Dealership, ttl=REFERENCE_TTL
+        )
+        return found if not isinstance(found, list) else o.WorkshopLocationsListed(locations=found)
 
     async def get_business_information(self) -> o.BusinessInformationFound | o.ReadFailure:
         found = await self._fetch_cached(

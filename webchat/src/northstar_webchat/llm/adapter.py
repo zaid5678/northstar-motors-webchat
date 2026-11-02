@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 
+from .. import ops
 from .types import FailureKind, LLMClient, LLMUnavailable, Message
 
 
@@ -167,9 +168,11 @@ class GuardedLLM:
         except LLMUnavailable as error:
             self._last = error.kind
             self._failures += 1
-            if error.kind in IMMEDIATE or self._failures >= self._failures_to_open:
+            opened = error.kind in IMMEDIATE or self._failures >= self._failures_to_open
+            if opened:
                 self._open_until = self._now() + (error.retry_after or self._cooldown)
                 self._failures = 0
+            ops.warn("llm_failure", kind=error.kind.value, breaker_opened=opened)
             raise
         self._failures = 0
         return reply

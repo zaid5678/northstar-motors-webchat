@@ -62,3 +62,24 @@ def test_the_website_does_not_contain_the_api_key() -> None:
 def test_no_webchat_source_contains_a_secret_value() -> None:
     for path in (ROOT / "webchat" / "src").rglob("*.py"):
         assert "northstar-local-development" not in path.read_text(encoding="utf-8")
+
+
+def test_startup_is_logged_without_secrets(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    from northstar_webchat import ops
+
+    try:
+        create_from_env(env(tmp_path, LLM_API_KEY="llm-secret-value", LLM_MODEL="qwen3.5:9b"))
+    finally:
+        ops.LOGGER.handlers.clear()
+        ops.LOGGER.propagate = True
+    lines = [json.loads(line) for line in capsys.readouterr().err.splitlines() if line.startswith("{")]
+    [startup] = [line for line in lines if line["event"] == "startup"]
+    assert startup["model"] == "qwen3.5:9b"
+    everything = json.dumps(lines)
+    for secret in ("llm-secret-value", "pepper", "chat.sqlite3"):
+        assert secret not in everything
+

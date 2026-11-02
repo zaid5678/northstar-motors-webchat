@@ -7,12 +7,14 @@ an honest message and buttons (D-006), and anything already in progress carries 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
+from .. import ops
 from ..dealership import outcomes as o
 from ..dealership.client import DealershipClient
 from ..dealership.models import (
@@ -147,8 +149,12 @@ def _department_week(hours: OpeningHours, department: Department) -> str:
     return f"{department.title()}: {'; '.join(parts)}"
 
 
+def _address(site: Dealership) -> str:
+    return f"{site.name}, {site.address_line}, {site.town} {site.postcode}"
+
+
 def _site_hours(site: Dealership, hours: OpeningHours) -> str:
-    lines = [f"{site.name}, {site.address_line}, {site.town} {site.postcode}. Phone {site.phone}."]
+    lines = [f"{_address(site)}. Phone {site.phone}, email {site.email}."]
     lines += [_department_week(hours, department) for department in DEPARTMENTS]
     for day in sorted({item.date for item in hours.holiday_exceptions}):
         rows = [item for item in hours.holiday_exceptions if item.date == day]
@@ -188,6 +194,8 @@ def _summaries(vehicles: Sequence[Vehicle]) -> list[str]:
 
 Progress = Callable[[str], Awaitable[None]]
 PROGRESS: ContextVar[Progress | None] = ContextVar("progress", default=None)
+# What the model made of this turn, for its log line. Kinds and names only, never the text.
+READING: ContextVar[dict[str, str] | None] = ContextVar("reading", default=None)
 
 
 async def _say(stage: str) -> None:
@@ -336,6 +344,12 @@ class TurnEngine:
             rejected=sorted({item.kind for item in composed.rejected}),
         )
         if composed.rejected:
+            ops.warn(
+                "grounding_rejected",
+                session=ops.session_tag(session_id),
+                kinds=sorted({item.kind for item in composed.rejected}),
+                reply=composed.source.value,
+            )
             self._service.store.note(
                 session_id,
                 "grounding_rejected",
@@ -369,6 +383,7 @@ class TurnEngine:
             text,
             lambda: self._message(session_id, text, page_vehicle),
             progress,
+            kind="message",
         )
 
     async def action(
@@ -377,7 +392,12 @@ class TurnEngine:
         """A button press. No model is involved, so these all work in degraded mode."""
         label = next((item.label for item in MENU if item.id == action_id), action_id)
         return await self._recorded(
-            session_id, label, lambda: self._action(session_id, action_id), progress
+            session_id,
+            label,
+            lambda: self._action(session_id, action_id),
+            progress,
+            kind="action",
+            action=action_id,
         )
 
     async def _recorded(
@@ -386,13 +406,32 @@ class TurnEngine:
         text: str,
         run: Callable[[], Awaitable[TurnReply]],
         progress: Progress | None,
+        *,
+        kind: str,
+        action: str | None = None,
     ) -> TurnReply:
         """Both sides of a turn are saved, so a refresh loses nothing. The reply is stored without
         its view, because a view can hold a confirmation token."""
         store = self._service.store
         store.add_message(session_id, "user", {"text": text}, datetime.now(timezone.utc))
         PROGRESS.set(progress)
+        reading: dict[str, str] = {}
+        READING.set(reading)
+        started = time.monotonic()
         reply = await self._in_order(session_id, run)
+        ops.log(
+            "turn",
+            session=ops.session_tag(session_id),
+            kind=kind,
+            action=action,
+            intent=reading.get("intent"),
+            interpretation=reading.get("interpretation"),
+            reply=reply.source.value,
+            degraded=reply.degraded,
+            vehicles=len(reply.vehicles),
+            workflow=reply.view.status if reply.view else None,
+            ms=round((time.monotonic() - started) * 1000),
+        )
         store.add_message(
             session_id,
             "assistant",
@@ -410,6 +449,11 @@ class TurnEngine:
             # Positions and titles only. The model never sees an ID, so it cannot name another car.
             context["shown_cars"] = [f"{place}: {item['title']}" for place, item in enumerate(shown, 1)]
         result = await interpret(self.llm, text, context=context, handles=handles, shown=len(shown))
+        noted = READING.get()
+        if noted is not None:
+            noted.update(
+                intent=result.interpretation.intent.value, interpretation=result.source.value
+            )
         if result.source is InterpretationSource.UNAVAILABLE:
             return await self._menu(session_id, DEGRADED, degraded=True)
         if result.source is InterpretationSource.FALLBACK:
@@ -616,17 +660,23 @@ class TurnEngine:
 
     async def _services(self, session_id: str, text: str) -> TurnReply:
         found = await self._client.list_service_types()
-        if not isinstance(found, o.ServiceTypesListed):
+        sites = await self._client.list_workshop_locations()
+        if not isinstance(found, o.ServiceTypesListed) or not isinstance(
+            sites, o.WorkshopLocationsListed
+        ):
             return await self._menu(session_id, PLATFORM_DOWN)
         lines = [
             f"{item.name}: "
             + ("price on request" if item.price_from_pence is None else f"from {pounds(item.price_from_pence)}")
             for item in found.service_types
         ]
+        # Addresses are written by code after the reply, like hours, so they cannot be garbled.
+        workshops = "Our workshops:\n" + "\n".join(_address(site) for site in sites.locations)
         data: dict[str, object] = {"services": lines}
-        return await self._written(
+        reply = await self._written(
             session_id, text, outcomes=[found], data=data, template="\n".join(lines)
         )
+        return reply.model_copy(update={"text": f"{reply.text}\n\n{workshops}"})
 
     async def _action(self, session_id: str, action_id: str) -> TurnReply:
         if action_id in BUTTON_WORKFLOWS:

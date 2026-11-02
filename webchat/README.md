@@ -81,6 +81,13 @@ state, pending operations, tool calls, and validator verdicts. Never enable it i
 `.env.example` lists every name. `NORTHSTAR_API_KEY` and `WEBCHAT_PEPPER` are required, and the rest
 have local defaults. Any OpenAI-compatible model can be used through the `LLM_` settings.
 
+## Logs
+
+The server writes one JSON line per event to stderr: each turn, AI failures, dealership-system
+failures, write outcomes, and server errors. With Docker, read them with
+`docker compose logs webchat`. `WEBCHAT_LOG_LEVEL` sets the level, and defaults to `INFO`. Logs
+never hold what a customer typed or their details, and sessions appear only as a short hash.
+
 ## Decisions and limits
 
 - Decisions: [docs/DECISIONS.md](../docs/DECISIONS.md)

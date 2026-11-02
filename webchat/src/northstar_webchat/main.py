@@ -9,6 +9,7 @@ from collections.abc import Mapping
 
 from fastapi import FastAPI
 
+from . import ops
 from .dealership import DealershipClient
 from .llm.adapter import build_llm
 from .persistence.store import Store
@@ -30,6 +31,7 @@ def _required(values: Mapping[str, str], name: str) -> str:
 
 def create_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
     values = os.environ if env is None else env
+    ops.configure(level=values.get("WEBCHAT_LOG_LEVEL", "INFO"))
     api_key = _required(values, "NORTHSTAR_API_KEY")
     pepper = _required(values, "WEBCHAT_PEPPER").encode()
     platform_url = values.get("NORTHSTAR_PLATFORM_URL", "http://localhost:4010")
@@ -47,4 +49,12 @@ def create_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
     )
     origin = values.get("WEBCHAT_ALLOWED_ORIGIN", "http://localhost:4173")
     inspector = values.get("WEBCHAT_DEV_INSPECTOR") == "1"
+    # No keys, and no database path, which can include a password on other databases.
+    ops.log(
+        "startup",
+        platform=platform_url,
+        model=values.get("LLM_MODEL") or None,
+        llm_configured=bool(values.get("LLM_BASE_URL")),
+        inspector=inspector,
+    )
     return create_app(service, engine, allowed_origin=origin, inspector=inspector)

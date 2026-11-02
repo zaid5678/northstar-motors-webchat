@@ -1114,3 +1114,48 @@ there. A wrongly started test drive costs the customer one form they can ignore.
 **Revisit if:** a misread start of another workflow causes real harm, or customers find the extra
 click annoying.
 
+---
+
+## D-031: Operational logs are JSON lines on stderr, with no customer data
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option.
+
+**Context:** the brief asks for operational logging. There was only the per-session event table
+and uvicorn's access log. Nothing recorded AI outages, dealership-system failures, write outcomes,
+turn times, or server errors.
+
+**Options:**
+
+- **A. JSON lines on stderr.** Uses Python's standard logging, so Docker and terminals keep them.
+- **B. A log table and inspector page.** Easy to browse, but it grows the database, and nothing
+  outside the app can read it.
+- **C. OpenTelemetry.** The most capable, but it needs a collector to be useful, and the brief
+  allows no hosted service except an LLM.
+
+**Choice:** A.
+
+**Events:**
+
+- `turn`: intent, how it was read, where the reply came from, degraded, car count, workflow
+  status, and milliseconds.
+- `llm_failure`: the failure kind, and whether the circuit breaker opened.
+- `platform_failure`: method, path with IDs removed, attempts, and time, after retries.
+- `write` and `write_interrupted`: the workflow and the outcome type.
+- `grounding_rejected`: the kinds of claim that were rejected.
+- `server_error`: path, exception type, and file and line.
+- `startup`.
+
+**Privacy rules, enforced by tests:**
+
+- Each event has a list of allowed fields, and a test fails on any other field.
+- No customer text, names, contact details, registrations, or references.
+- A session appears only as a 12-character hash, because the session ID is a cookie.
+- Exception messages are never logged, because they can quote input.
+- The start-up line holds no keys and no database path.
+
+**Evidence:** 17 of 17 deliberate breaks were caught, including adding customer text to a turn
+line.
+
+**Revisit if:** the service runs as several processes, or needs metrics and alerts. The metric
+names in `docs/SCALING.md` would then be added.
+

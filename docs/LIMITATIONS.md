@@ -55,7 +55,9 @@ so these are the gaps already known from `docs/PLATFORM-NOTES.md` and `docs/DECI
 Against the brief, these do not exist yet:
 
 - Offers shown as links, because the website has no offer pages.
-- Structured operational logging and metrics, beyond the event log and access logs.
+- Metrics and alerts. Operational logs exist (D-031), but nothing counts or alerts on them, and the
+  metric names in `docs/SCALING.md` are not built.
+- Logs go to stderr only. Keeping and rotating them is left to Docker or whatever runs the server.
 
 ## Running on other computers
 

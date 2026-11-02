@@ -10,6 +10,7 @@ process, so a crash at any point leaves enough to finish the job or say honestly
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
+from .. import ops
 from ..dealership import outcomes as o
 from ..dealership.client import DealershipClient
 from ..dealership.models import (
@@ -76,6 +78,7 @@ from ..workflows.types import (
     Workflow,
     WorkflowKind,
     WriteInterrupted,
+    WriteCompleted,
     WriteUnknown,
 )
 from .fields import FormBuilder, identity_fields
@@ -269,6 +272,12 @@ class WriteService:
             self.store.note(
                 session_id, "internal_error", Source.SYSTEM, self._now(), error=type(error).__name__
             )
+            ops.log(
+                "write_interrupted",
+                level=logging.ERROR,
+                session=ops.session_tag(session_id),
+                error=type(error).__name__,
+            )
             self._apply(session_id, Source.SYSTEM, WriteInterrupted())
 
     async def _reconcile(self, session_id: str) -> None:
@@ -407,6 +416,13 @@ class WriteService:
         if isinstance(outcome, o.WriteNotSent) and workflow.failure_reason is not None:
             # An earlier attempt may have landed, so failing to send this one proves nothing.
             event = WriteUnknown(reason="no_response")
+        ops.log(
+            "write",
+            level=logging.INFO if isinstance(event, WriteCompleted) else logging.WARNING,
+            session=ops.session_tag(session_id),
+            workflow=workflow.kind.value,
+            outcome=type(outcome).__name__,
+        )
         if isinstance(outcome, o.BookingCancelled):
             # D-007: the platform can never rebook this slot.
             self.store.mark_unbookable(outcome.slot_id, self._now() + UNBOOKABLE_AFTER_CANCEL)
