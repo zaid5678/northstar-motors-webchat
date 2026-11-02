@@ -96,5 +96,9 @@ def test_a_failed_download_still_lets_the_chat_start(services: dict[str, Any]) -
     script = " ".join(pull["command"])
     assert pull["entrypoint"][:2] == ["/bin/sh", "-c"]
     assert "||" in script
-    completed = subprocess.run(["/bin/sh", "-c", script.replace("ollama pull", "false")])
+    # The script runs in a Linux container. Windows test machines may have no shell to try it in.
+    shell = shutil.which("sh")
+    if shell is None:
+        pytest.skip("no sh to run the script in")
+    completed = subprocess.run([shell, "-c", script.replace("ollama pull", "false")])
     assert completed.returncode == 0
