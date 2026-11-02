@@ -27,7 +27,9 @@ class PredictableLLM:
         max_tokens: int = 600,
     ) -> str:
         text = messages[-1].content
-        await asyncio.sleep(0.4)  # Long enough for a browser to see progress.
+        # Long enough for a slow browser to see each progress stage. Interpretation is the first
+        # stage a customer sees, so it is held longest.
+        await asyncio.sleep(1.5 if schema is not None else 0.4)
         if "modeldown" in text:
             raise LLMUnavailable(FailureKind.RATE_LIMITED, retry_after=0)
         if schema is None:

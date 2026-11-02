@@ -132,7 +132,15 @@ export function Chat({ api }: { api: Api }) {
             await api.resume(saved.last_event_id, (name) => setStage(STAGES[name] ?? WAITING)),
           );
         } catch {
-          setError("We didn't get a reply to your last message. Please send it again.");
+          // The turn may have finished without its stream event reaching us, so read what is saved.
+          try {
+            const again = await api.transcript();
+            setMessages(again.messages);
+            setView(again.view);
+            if (again.pending) setError("We didn't get a reply to your last message. Please send it again.");
+          } catch {
+            setError("We didn't get a reply to your last message. Please send it again.");
+          }
         } finally {
           setStage("");
         }

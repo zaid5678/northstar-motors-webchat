@@ -229,6 +229,23 @@ describe("behaviour", () => {
     expect(resume.mock.calls[0][0]).toBe(42);
   });
 
+  it("shows the saved reply when a resumed stream ends without one", async () => {
+    const resume = vi.fn().mockRejectedValue(new Error("the stream ended without a reply"));
+    const transcript = vi
+      .fn()
+      .mockResolvedValueOnce({
+        messages: [{ role: "user", text: "hi" }], pending: true, last_event_id: 3, view: idle, actions: [],
+      })
+      .mockResolvedValue({
+        messages: [{ role: "user", text: "hi" }, { role: "assistant", text: "Saved reply" }],
+        pending: false, last_event_id: 4, view: idle, actions: [],
+      });
+    render(<Chat api={fakeApi({ resume, transcript })} />);
+    await openPanel();
+    expect(await screen.findByText("Saved reply")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("confirms exactly once on repeated clicks", async () => {
     let finish: (view: View) => void = () => undefined;
     const confirm = vi.fn(() => new Promise<View>((done) => (finish = done)));

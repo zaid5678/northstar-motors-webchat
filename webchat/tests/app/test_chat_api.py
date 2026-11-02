@@ -271,6 +271,41 @@ class TestResume:
             resumed = await asyncio.wait_for(resume, timeout=5)
         assert events_of(resumed.text)[-1][1]["text"] == "Here you go."
 
+    async def test_a_resume_waits_for_the_reply_event_after_the_reply_is_saved(
+        self, client: DealershipClient, service: WriteService  # noqa: F811
+    ) -> None:
+        """The reply reaches the transcript a moment before its stream event is stored. A browser
+        that refreshes in that gap must still get the reply, not an empty stream."""
+        from datetime import datetime, timezone
+
+        async with browser_for(make_app(ScriptedLLM([]), client, service)) as browser:
+            browser.cookies.set(COOKIE, "web")
+            now = datetime.now(timezone.utc)
+            service.store.add_message("web", "user", {"text": "hi"}, now)
+            service.store.add_message("web", "assistant", {"text": "Done"}, now)
+            resume = asyncio.create_task(
+                browser.get("/api/chat/stream", headers={"Last-Event-ID": "0"})
+            )
+            await asyncio.sleep(0.3)
+            service.store.add_stream_event("web", "reply", {"text": "Done"}, now)
+            resumed = await asyncio.wait_for(resume, timeout=5)
+        assert [name for name, _ in events_of(resumed.text)] == ["reply"]
+
+    async def test_a_resume_gives_up_if_no_reply_event_ever_arrives(
+        self, client: DealershipClient, service: WriteService  # noqa: F811
+    ) -> None:
+        from datetime import datetime, timezone
+
+        async with browser_for(make_app(ScriptedLLM([]), client, service)) as browser:
+            browser.cookies.set(COOKIE, "web")
+            now = datetime.now(timezone.utc)
+            service.store.add_message("web", "user", {"text": "hi"}, now)
+            service.store.add_message("web", "assistant", {"text": "Done"}, now)
+            resumed = await asyncio.wait_for(
+                browser.get("/api/chat/stream", headers={"Last-Event-ID": "0"}), timeout=10
+            )
+        assert events_of(resumed.text) == []
+
     async def test_events_belong_to_one_session(self, http: httpx.AsyncClient) -> None:
         await http.post("/api/chat/stream", json={"text": "hybrid please"})
         http.cookies.set(COOKIE, "someone-else")

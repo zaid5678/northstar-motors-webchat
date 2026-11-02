@@ -27,6 +27,10 @@ THIRTY_DAYS = 60 * 60 * 24 * 30
 HEARTBEAT_SECONDS = 15.0
 RESUME_POLL_SECONDS = 0.1
 RESUME_LIMIT_SECONDS = 60.0
+# The reply reaches the transcript a moment before its stream event is stored, so a resume that
+# finds the turn "finished" still waits this long for the event.
+RESUME_GRACE_SECONDS = 1.5
+TERMINAL_EVENTS = ("reply", "error")
 TURN_FAILED = "Sorry, something went wrong with that message. Please try again."
 FINAL_STATUSES = ("completed", "failed", "unknown", "two_bookings")
 # The website on any local or private address, so a phone on the same network works.
@@ -228,16 +232,22 @@ def create_app(
             async def events() -> AsyncIterator[str]:
                 cursor = after
                 waited = 0.0
+                grace = 0.0
                 while True:
                     running = pending(session)
                     for row in store.stream_events(session, cursor):
                         cursor = row["id"]
                         yield _frame(row["id"], row["name"], row["data"])
-                    if not running:
-                        return
-                    if waited >= RESUME_LIMIT_SECONDS:
-                        yield emit(session, "error", {})
-                        return
+                        if row["name"] in TERMINAL_EVENTS:
+                            return
+                    if running:
+                        if waited >= RESUME_LIMIT_SECONDS:
+                            yield emit(session, "error", {})
+                            return
+                    else:
+                        grace += RESUME_POLL_SECONDS
+                        if grace >= RESUME_GRACE_SECONDS:
+                            return
                     await asyncio.sleep(RESUME_POLL_SECONDS)
                     waited += RESUME_POLL_SECONDS
 
