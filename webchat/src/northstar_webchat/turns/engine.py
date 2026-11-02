@@ -418,7 +418,14 @@ class TurnEngine:
         reading: dict[str, str] = {}
         READING.set(reading)
         started = time.monotonic()
-        reply = await self._in_order(session_id, run)
+
+        async def hidden_first() -> TurnReply:
+            # A new question puts any unfinished form aside. A turn about the task shows it again,
+            # because every change to the task clears this (D-034).
+            await self._service.hide_form(session_id)
+            return await run()
+
+        reply = await self._in_order(session_id, hidden_first)
         ops.log(
             "turn",
             session=ops.session_tag(session_id),

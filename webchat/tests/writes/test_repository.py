@@ -38,6 +38,7 @@ class MemoryRepository:
         self.transcripts: dict[str, list[dict[str, Any]]] = {}
         self.stream: dict[str, list[dict[str, Any]]] = {}
         self.memory: dict[str, dict[str, Any]] = {}
+        self.hidden: set[str] = set()
         self.counter = 0
 
     def _log(self, session_id: str, kind: str, payload: dict[str, Any]) -> None:
@@ -77,6 +78,7 @@ class MemoryRepository:
                 self.requests.setdefault(intent[0], (session_id, intent[1], intent[2]))
             name = type(item).__name__
             self._log(session_id, name if result.accepted else f"{name}:rejected", {})
+            self.hidden.discard(session_id)
             if result.accepted:
                 self.sessions[session_id] = result.session
                 self.times[session_id] = moment
@@ -168,6 +170,15 @@ class MemoryRepository:
 
     def recall(self, session_id: str) -> dict[str, Any] | None:
         return self.memory.get(session_id)
+
+    def hide_form(self, session_id: str, at: datetime) -> None:
+        self.hidden.add(session_id)
+
+    def show_form(self, session_id: str) -> None:
+        self.hidden.discard(session_id)
+
+    def form_hidden(self, session_id: str) -> bool:
+        return session_id in self.hidden
 
 
 def test_both_implementations_satisfy_the_contract(store: Store) -> None:

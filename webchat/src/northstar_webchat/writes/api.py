@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from .. import ops
 from ..persistence.store import IN_FLIGHT
 from ..turns.engine import MENU, TurnEngine, TurnReply
-from ..workflows.types import SlotScalar
+from ..workflows.types import ABANDONABLE_PHASES, TERMINAL_PHASES, SlotScalar
 from .present import View
 from .service import WriteService
 
@@ -38,6 +38,7 @@ RESUME_GRACE_SECONDS = 1.5
 TERMINAL_EVENTS = ("reply", "error")
 TURN_FAILED = "Sorry, something went wrong with that message. Please try again."
 FINAL_STATUSES = ("completed", "failed", "unknown", "two_bookings")
+CANCELLED = "That's cancelled, and nothing was sent to the dealership. What else can I help with?"
 # The website on any local or private address, so a phone on the same network works.
 LOCAL_ORIGINS = (
     r"^https?://(localhost|127\.0\.0\.1|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}"
@@ -176,6 +177,23 @@ def create_app(
             )
         return {"ok": True}
 
+    @app.post("/api/session/new")
+    async def fresh_session(
+        response: Response, northstar_session: str | None = Cookie(default=None)
+    ) -> dict[str, bool]:
+        """A new chat. The old one stays on the server, unseen (D-036). Refused while a write is
+        being sent or its outcome is unknown, so its result and Check again are not lost."""
+        if northstar_session:
+            active = store.load(northstar_session).active
+            if active is not None and active.phase in ABANDONABLE_PHASES:
+                await service.abandon(northstar_session)
+            elif active is not None and active.phase not in TERMINAL_PHASES:
+                raise HTTPException(status_code=409, detail="A request is still being sent.")
+        response.set_cookie(
+            COOKIE, str(uuid.uuid4()), httponly=True, samesite="lax", max_age=THIRTY_DAYS
+        )
+        return {"ok": True}
+
     @app.post("/api/confirmations")
     async def confirm(click: Click, northstar_session: str | None = Cookie(default=None)) -> View:
         session = _session(northstar_session)
@@ -189,6 +207,24 @@ def create_app(
     @app.get("/api/conversation/state")
     async def state(northstar_session: str | None = Cookie(default=None)) -> View:
         return await service.view(_session(northstar_session))
+
+    @app.post("/api/conversation/continue")
+    async def continue_form(northstar_session: str | None = Cookie(default=None)) -> View:
+        """Brings back a form that a later question put aside (D-034)."""
+        return await service.show_form(_session(northstar_session))
+
+    @app.post("/api/conversation/cancel")
+    async def cancel_task(northstar_session: str | None = Cookie(default=None)) -> View:
+        """Drops an unfinished task. The machine refuses once anything is being sent (D-035)."""
+        session = _session(northstar_session)
+        active = store.load(session).active
+        if active is None or active.phase not in ABANDONABLE_PHASES:
+            return await service.view(session)
+        view = await service.abandon(session)
+        if view.status == "abandoned":
+            reply = {"text": CANCELLED, "actions": [item.model_dump() for item in MENU]}
+            store.add_message(session, "assistant", reply, datetime.now(timezone.utc))
+        return view
 
     if engine is not None:
 

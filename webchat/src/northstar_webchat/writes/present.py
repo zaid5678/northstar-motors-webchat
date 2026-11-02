@@ -65,6 +65,9 @@ class View(BaseModel):
     fields: list[Field] = []
     reference: str | None = None
     can_check_again: bool = False
+    # The customer asked something else, so the form or card waits behind `resume` (D-034).
+    hidden: bool = False
+    resume: str = ""
 
 
 def pretty(value: str) -> str:
@@ -119,6 +122,21 @@ PROCESSING = {
     WorkflowKind.WORKSHOP_AMEND: "We're updating your booking.",
     WorkflowKind.WORKSHOP_CANCEL: "We're cancelling your booking.",
 }
+
+RESUME = {
+    WorkflowKind.TEST_DRIVE: "Continue booking your test drive",
+    WorkflowKind.WORKSHOP_CREATE: "Continue booking your service",
+    WorkflowKind.WORKSHOP_AMEND: "Continue changing your booking",
+    WorkflowKind.WORKSHOP_CANCEL: "Continue cancelling your booking",
+    WorkflowKind.BOOKING_RETRIEVAL: "Continue checking your booking",
+    WorkflowKind.PART_EXCHANGE: "Continue your part-exchange estimate",
+    WorkflowKind.CALLBACK: "Continue your callback request",
+    WorkflowKind.MESSAGE: "Continue your message",
+    WorkflowKind.SALES_ENQUIRY: "Continue your enquiry",
+    WorkflowKind.VEHICLE_INTEREST: "Continue registering your interest",
+}
+# Only a form or a confirmation card can wait. Anything being sent is always shown.
+HIDEABLE = frozenset({"collecting", "verifying", "confirming"})
 
 UNKNOWN = (
     "We're still checking whether this went through, so please don't book again. "

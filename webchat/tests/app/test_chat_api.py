@@ -552,3 +552,167 @@ class TestInspector:
         dumped = json.dumps(data)
         assert token_of(view) not in dumped
         assert "probe@example.com" not in dumped
+
+
+class TestHiddenForms:
+    """A new question puts the form aside, and Continue brings it back (D-034)."""
+
+    async def test_continue_brings_the_form_back(self, http: httpx.AsyncClient) -> None:
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        await http.post("/api/chat/action", json={"id": "opening_hours"})
+        state = (await http.get("/api/conversation/state")).json()
+        assert state["hidden"] and state["resume"] == "Continue checking your booking"
+        shown = (await http.post("/api/conversation/continue")).json()
+        assert not shown["hidden"] and shown["status"] == "verifying"
+        assert [field["name"] for field in shown["fields"]] == [
+            "reference", "last_name", "registration", "phone",
+        ]
+
+    async def test_continue_needs_a_session(self, client: DealershipClient, service: WriteService) -> None:  # noqa: F811
+        async with browser_for(make_app(ScriptedLLM([]), client, service)) as browser:
+            response = await browser.post("/api/conversation/continue")
+        assert response.status_code in (401, 403)
+
+
+class TestCancellingATask:
+    """A customer can drop an unfinished task, but never one that is being sent."""
+
+    CANCELLED = "That's cancelled, and nothing was sent to the dealership."
+
+    async def test_a_form_can_be_cancelled(self, http: httpx.AsyncClient) -> None:
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        view = (await http.post("/api/conversation/cancel")).json()
+        assert view["status"] == "abandoned" and not view["fields"]
+        saved = (await http.get("/api/chat/transcript")).json()
+        assert saved["messages"][-1]["text"].startswith(self.CANCELLED)
+        # "What else can I help with?" needs something to press.
+        assert "callback" in {action["id"] for action in saved["messages"][-1]["actions"]}
+
+    async def test_another_task_can_start_afterwards(self, http: httpx.AsyncClient) -> None:
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        await http.post("/api/conversation/cancel")
+        reply = (await http.post("/api/chat/action", json={"id": "callback"})).json()
+        assert "Finish or cancel" not in reply["text"]
+        assert reply["view"]["status"] == "collecting"
+
+    async def test_a_cancelled_card_cannot_be_confirmed(
+        self, http: httpx.AsyncClient, service: WriteService  # noqa: F811
+    ) -> None:
+        await http.post("/api/chat/action", json={"id": "callback"})
+        values = {
+            "dealership_id": "northstar-manchester",
+            "department": "sales",
+            "reason": "Discuss finance",
+            "first_name": "Probe",
+            "last_name": "Tester",
+            "email": "probe@example.com",
+            "phone": "07700900999",
+        }
+        for name, value in values.items():
+            view = (await http.post("/api/chat/slot", json={"name": name, "value": value})).json()
+        token = view["block"]["token"]
+        await http.post("/api/conversation/cancel")
+        after = (await http.post("/api/confirmations", json={"token": token})).json()
+        assert after["status"] != "completed"
+        assert service.store.write_requests("web") == []
+
+    async def test_a_form_put_aside_can_be_cancelled(self, http: httpx.AsyncClient) -> None:
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        await http.post("/api/chat/action", json={"id": "opening_hours"})
+        view = (await http.post("/api/conversation/cancel")).json()
+        assert view["status"] == "abandoned" and not view["hidden"]
+
+    async def test_with_nothing_to_cancel_nothing_is_said(self, http: httpx.AsyncClient) -> None:
+        before = (await http.get("/api/chat/transcript")).json()["messages"]
+        view = (await http.post("/api/conversation/cancel")).json()
+        assert view["status"] == "idle"
+        assert (await http.get("/api/chat/transcript")).json()["messages"] == before
+
+    async def test_it_needs_a_session(self, client: DealershipClient, service: WriteService) -> None:  # noqa: F811
+        async with browser_for(make_app(ScriptedLLM([]), client, service)) as browser:
+            response = await browser.post("/api/conversation/cancel")
+        assert response.status_code == 401
+
+    async def test_cancelling_twice_says_it_once(self, http: httpx.AsyncClient) -> None:
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        await http.post("/api/conversation/cancel")
+        await http.post("/api/conversation/cancel")
+        saved = (await http.get("/api/chat/transcript")).json()["messages"]
+        assert sum(item["text"].startswith(self.CANCELLED) for item in saved) == 1
+
+
+class TestNewChat:
+    """A customer can start afresh. The old conversation stays on the server (D-036)."""
+
+    CALLBACK = {
+        "dealership_id": "northstar-manchester",
+        "department": "sales",
+        "reason": "Discuss finance",
+        "first_name": "Probe",
+        "last_name": "Tester",
+        "email": "probe@example.com",
+        "phone": "07700900999",
+    }
+
+    async def new_chat(self, http: httpx.AsyncClient) -> str:
+        """As a browser would: the new cookie replaces the old one."""
+        response = await http.post("/api/session/new")
+        assert response.status_code == 200
+        fresh = response.cookies[COOKIE]
+        http.cookies.clear()
+        http.cookies.set(COOKIE, fresh)
+        return fresh
+
+    async def test_it_gives_a_new_empty_conversation(
+        self, http: httpx.AsyncClient, service: WriteService  # noqa: F811
+    ) -> None:
+        await http.post("/api/chat/action", json={"id": "opening_hours"})
+        fresh = await self.new_chat(http)
+        assert fresh != "web"
+        saved = (await http.get("/api/chat/transcript")).json()
+        assert saved["messages"] == [] and saved["view"]["status"] == "idle"
+        assert service.store.messages("web")  # The old one is kept.
+
+    async def test_the_cookie_is_as_safe_as_the_first(self, http: httpx.AsyncClient) -> None:
+        response = await http.post("/api/session/new")
+        cookie = response.headers["set-cookie"].lower()
+        assert "httponly" in cookie and "samesite=lax" in cookie
+
+    async def test_an_unfinished_form_is_cancelled(
+        self, http: httpx.AsyncClient, service: WriteService  # noqa: F811
+    ) -> None:
+        from northstar_webchat.workflows.types import Phase
+
+        await http.post("/api/chat/action", json={"id": "booking_retrieval"})
+        await http.post("/api/session/new")
+        old = service.store.load("web").active
+        assert old is not None and old.phase is Phase.ABANDONED
+
+    async def test_the_saved_search_is_not_carried_over(
+        self, http: httpx.AsyncClient, service: WriteService  # noqa: F811
+    ) -> None:
+        await http.post("/api/chat/message", json={"text": "hybrid please"})
+        assert service.store.recall("web") is not None
+        fresh = await self.new_chat(http)
+        assert service.store.recall(fresh) is None
+
+    async def test_it_is_refused_while_an_outcome_is_unknown(
+        self, http: httpx.AsyncClient, service: WriteService, faults: Any  # noqa: F811
+    ) -> None:
+        """Otherwise the customer would lose the Check again button for a booking that may exist."""
+        faults.lose_response("POST", "/api/callback-requests", times=99)
+        await http.post("/api/chat/action", json={"id": "callback"})
+        for name, value in self.CALLBACK.items():
+            view = (await http.post("/api/chat/slot", json={"name": name, "value": value})).json()
+        view = (await http.post("/api/confirmations", json={"token": view["block"]["token"]})).json()
+        assert view["status"] == "unknown"
+        response = await http.post("/api/session/new")
+        assert response.status_code == 409
+        assert COOKIE not in response.cookies
+
+    async def test_with_no_session_it_just_starts_one(
+        self, client: DealershipClient, service: WriteService  # noqa: F811
+    ) -> None:
+        async with browser_for(make_app(ScriptedLLM([]), client, service)) as browser:
+            response = await browser.post("/api/session/new")
+            assert response.status_code == 200 and browser.cookies.get(COOKIE)

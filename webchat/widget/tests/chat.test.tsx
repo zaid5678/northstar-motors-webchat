@@ -13,6 +13,8 @@ const collecting: View = {
   block: null,
   reference: null,
   can_check_again: false,
+  hidden: false,
+  resume: "",
   fields: [
     { name: "email", label: "Email", kind: "email", options: [], value: null, required: true },
     {
@@ -76,6 +78,9 @@ function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}, saved: Par
     identity: vi.fn(),
     confirm: vi.fn(),
     checkAgain: vi.fn(),
+    continueForm: vi.fn(),
+    cancelTask: vi.fn(),
+    newChat: vi.fn(),
     inspect: vi.fn().mockResolvedValue(null),
     ...overrides,
   } as unknown as Api;
@@ -156,6 +161,58 @@ describe("accessibility of every state", () => {
     await openPanel();
     await screen.findByRole("button", { name: "Confirm" });
     await noViolations(container);
+  });
+
+  it("form put aside", async () => {
+    const view = { ...collecting, hidden: true, resume: "Continue your callback request" };
+    const { container } = render(<Chat api={fakeApi({}, { view })} />);
+    await openPanel();
+    await screen.findByRole("button", { name: "Continue your callback request" });
+    await noViolations(container);
+  });
+});
+
+describe("a new question puts the form aside (D-034)", () => {
+  const aside = { ...collecting, hidden: true, resume: "Continue your callback request" };
+
+  it("hides the form after a reply, and offers to continue", async () => {
+    const answer: ChatMessage = { role: "assistant", text: "We open at 9." };
+    const api = fakeApi(
+      { send: vi.fn().mockResolvedValue(answer), state: vi.fn().mockResolvedValue(aside) },
+      { view: collecting },
+    );
+    render(<Chat api={api} />);
+    await openPanel();
+    await screen.findByLabelText("Email");
+    await userEvent.type(screen.getByRole("textbox", { name: "Your message" }), "when do you open?{Enter}");
+    await screen.findByText("We open at 9.");
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.getByRole("button", { name: "Continue your callback request" })).toBeTruthy();
+  });
+
+  it("brings the form back on Continue", async () => {
+    const continueForm = vi.fn().mockResolvedValue(collecting);
+    render(<Chat api={fakeApi({ continueForm }, { view: aside })} />);
+    await openPanel();
+    await userEvent.click(await screen.findByRole("button", { name: "Continue your callback request" }));
+    await screen.findByLabelText("Email");
+    expect(continueForm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Continue your callback request" })).toBeNull();
+  });
+
+  it("hides a confirmation card too", async () => {
+    const view = { ...confirming, hidden: true, resume: "Continue your callback request" };
+    render(<Chat api={fakeApi({}, { view })} />);
+    await openPanel();
+    await screen.findByRole("button", { name: "Continue your callback request" });
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  });
+
+  it("keeps the message box ready while the form is aside", async () => {
+    render(<Chat api={fakeApi({}, { view: aside })} />);
+    await openPanel();
+    const box = await screen.findByRole("textbox", { name: "Your message" });
+    await waitFor(() => expect(document.activeElement === box || box.matches(":focus")).toBe(true));
   });
 });
 
@@ -314,5 +371,126 @@ describe("behaviour", () => {
     await openPanel();
     await screen.findByText("<img src=x>");
     expect(container.querySelector(".bubble img")).toBeNull();
+  });
+});
+
+describe("cancelling an unfinished task (D-035)", () => {
+  const cancelled: Transcript = {
+    messages: [{ role: "assistant", text: "That's cancelled, and nothing was sent to the dealership." }],
+    pending: false,
+    last_event_id: 0,
+    view: { ...idle, status: "abandoned" },
+    actions: [],
+  };
+  const cancel = () => screen.findByRole("button", { name: "Cancel" });
+
+  it("cancels a form and says so", async () => {
+    const cancelTask = vi.fn().mockResolvedValue({ ...idle, status: "abandoned" });
+    const transcript = vi
+      .fn()
+      .mockResolvedValueOnce({ messages: [], pending: false, last_event_id: 0, view: collecting, actions: [] })
+      .mockResolvedValue(cancelled);
+    render(<Chat api={fakeApi({ cancelTask, transcript }, { view: collecting })} />);
+    await openPanel();
+    await userEvent.click(await cancel());
+    await screen.findByText("That's cancelled, and nothing was sent to the dealership.");
+    expect(cancelTask).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("Email")).toBeNull();
+  });
+
+  it("is offered with a confirmation card", async () => {
+    render(<Chat api={fakeApi({}, { view: confirming })} />);
+    await openPanel();
+    await screen.findByRole("button", { name: "Confirm" });
+    expect(await cancel()).toBeTruthy();
+  });
+
+  it("is offered beside Continue when the form is aside", async () => {
+    const view = { ...collecting, hidden: true, resume: "Continue your callback request" };
+    render(<Chat api={fakeApi({}, { view })} />);
+    await openPanel();
+    await screen.findByRole("button", { name: "Continue your callback request" });
+    expect(await cancel()).toBeTruthy();
+  });
+
+  it("is offered when locked out", async () => {
+    const view = { ...idle, status: "locked", message: "Too many attempts." };
+    render(<Chat api={fakeApi({}, { view })} />);
+    await openPanel();
+    expect(await cancel()).toBeTruthy();
+  });
+
+  it.each(["idle", "processing", "unknown", "completed"])("is not offered when %s", async (status) => {
+    render(<Chat api={fakeApi({}, { view: { ...idle, status, message: "x" } })} />);
+    await openPanel();
+    await screen.findByRole("textbox", { name: "Your message" });
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("has no accessibility problems beside a form", async () => {
+    const { container } = render(<Chat api={fakeApi({}, { view: collecting })} />);
+    await openPanel();
+    await cancel();
+    await noViolations(container);
+  });
+});
+
+describe("starting a new chat (D-036)", () => {
+  const old: Transcript = {
+    messages: [{ role: "assistant", text: "Here are the hybrids." }],
+    pending: false,
+    last_event_id: 0,
+    view: idle,
+    actions: [],
+  };
+  const fresh: Transcript = { ...old, messages: [] };
+  const newChatButton = () => screen.findByRole("button", { name: "New chat" });
+
+  it("asks first, then clears the conversation", async () => {
+    const newChat = vi.fn().mockResolvedValue(undefined);
+    const transcript = vi.fn().mockResolvedValueOnce(old).mockResolvedValue(fresh);
+    render(<Chat api={fakeApi({ newChat, transcript })} />);
+    await openPanel();
+    await screen.findByText("Here are the hybrids.");
+    await userEvent.click(await newChatButton());
+    expect(newChat).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Start new chat" }));
+    await waitFor(() => expect(screen.queryByText("Here are the hybrids.")).toBeNull());
+    expect(newChat).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Start new chat" })).toBeNull();
+  });
+
+  it("can be called off", async () => {
+    const newChat = vi.fn();
+    render(<Chat api={fakeApi({ newChat }, old)} />);
+    await openPanel();
+    await userEvent.click(await newChatButton());
+    await userEvent.click(screen.getByRole("button", { name: "Keep chatting" }));
+    expect(newChat).not.toHaveBeenCalled();
+    expect(screen.getByText("Here are the hybrids.")).toBeTruthy();
+  });
+
+  it.each(["processing", "unknown"])("is not offered while a request is %s", async (status) => {
+    render(<Chat api={fakeApi({}, { view: { ...idle, status, message: "x" } })} />);
+    await openPanel();
+    expect((await newChatButton()).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("explains when the server refuses", async () => {
+    const newChat = vi.fn().mockRejectedValue(new Error("409"));
+    render(<Chat api={fakeApi({ newChat }, old)} />);
+    await openPanel();
+    await userEvent.click(await newChatButton());
+    await userEvent.click(screen.getByRole("button", { name: "Start new chat" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("couldn't start a new chat");
+    expect(screen.getByText("Here are the hybrids.")).toBeTruthy();
+  });
+
+  it("has no accessibility problems while asking", async () => {
+    const { container } = render(<Chat api={fakeApi({}, old)} />);
+    await openPanel();
+    await userEvent.click(await newChatButton());
+    await screen.findByRole("button", { name: "Start new chat" });
+    await noViolations(container);
   });
 });

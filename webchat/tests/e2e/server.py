@@ -40,6 +40,8 @@ class PredictableLLM:
             return json.dumps({"intent": "workshop_cancel"})
         if "compare them" in text:
             return json.dumps({"intent": "compare_vehicles"})
+        if "what time" in text:
+            return json.dumps({"intent": "opening_hours", "dealership": "bolton"})
         return json.dumps({"intent": "vehicle_search", "filters": {"fuel_type": "Hybrid"}})
 
 

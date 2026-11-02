@@ -38,11 +38,16 @@ services:
       context: ./webchat
     environment:
       NORTHSTAR_API_KEY: northstar-local-development
-      WEBCHAT_PEPPER: ${WEBCHAT_PEPPER:-local-development-only}
+      WEBCHAT_PEPPER: ${WEBCHAT_PEPPER:-}
+      WEBCHAT_PEPPER_FILE: /secrets/pepper
       NORTHSTAR_PLATFORM_URL: http://dealership-platform:4010
       WEBCHAT_DATABASE_URL: sqlite:////data/webchat.sqlite3
+      # Ollama on the computer when it has the model, otherwise the bundled one (D-033).
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.5:9b}
+      LLM_FALLBACK_BASE_URL: http://ollama:11434/v1
+      LLM_FALLBACK_MODEL: qwen2.5:3b
+      LLM_FALLBACK_TIMEOUT_SECONDS: "60"
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-none}
     extra_hosts:
@@ -51,10 +56,40 @@ services:
       - "4020:4020"
     volumes:
       - northstar-webchat-data:/data
+      - northstar-webchat-secrets:/secrets
     depends_on:
       dealership-platform:
+        condition: service_healthy
+      ollama-model:
+        condition: service_completed_successfully
+
+  # The AI runs here, so nothing needs installing (D-033). No port is opened on the computer.
+  ollama:
+    image: ollama/ollama:0.12.6
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+    volumes:
+      - northstar-ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # Downloads the model once. If that fails, for example offline, the chat starts without it.
+  ollama-model:
+    image: ollama/ollama:0.12.6
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - ollama pull qwen2.5:3b || echo "Model download failed. The chat will run without AI."
+    depends_on:
+      ollama:
         condition: service_healthy
 
 volumes:
   northstar-platform-data:
   northstar-webchat-data:
+  northstar-webchat-secrets:
+  northstar-ollama-models:

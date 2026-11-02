@@ -72,7 +72,7 @@ ALLOWED = {
     "write": {"session", "workflow", "outcome"},
     "write_interrupted": {"session", "error"},
     "server_error": {"method", "path", "error", "where"},
-    "startup": {"platform", "model", "llm_configured", "inspector"},
+    "startup": {"platform", "model", "llm_configured", "llm_choice", "inspector"},
 }
 BASE = {"at", "level", "event"}
 

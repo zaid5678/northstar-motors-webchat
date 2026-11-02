@@ -23,7 +23,15 @@ export const styles = `
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px; background: #172329; color: #fff; font-size: 16px; font-weight: 600;
 }
+.header > span { flex: 1; }
+.new-chat {
+  border: 1px solid rgba(255,255,255,.6); border-radius: 14px; background: none; color: inherit;
+  font-size: 13px; padding: 4px 10px; cursor: pointer;
+}
+.new-chat:disabled { opacity: .45; cursor: default; }
 .close { border: 0; background: none; color: inherit; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+.confirm-new { padding: 10px 14px; background: #eef2f4; border-bottom: 1px solid #d5dde1; font-size: 14px; }
+.confirm-new p { margin: 0 0 8px; }
 .log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .bubble { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 15px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .user { align-self: flex-end; background: #1f6feb; color: #fff; }

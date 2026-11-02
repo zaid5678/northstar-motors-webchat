@@ -17,6 +17,8 @@ from northstar_webchat.llm.adapter import (
     LLMSettings,
     OpenAICompatibleLLM,
     UnconfiguredLLM,
+    choose_settings,
+    has_model,
 )
 from northstar_webchat.llm.scripted import ScriptedLLM
 from northstar_webchat.llm.types import FailureKind, LLMClient, LLMUnavailable, Message
@@ -71,6 +73,125 @@ class TestSettings:
 
     def test_the_key_never_appears_in_repr(self) -> None:
         assert KEY not in repr(SETTINGS)
+
+
+class TestTimeouts:
+    def test_twenty_seconds_by_default(self) -> None:
+        settings = LLMSettings.from_env({"LLM_BASE_URL": BASE, "LLM_MODEL": "m"})
+        assert settings is not None and settings.timeout == 20.0
+
+    def test_it_can_be_set(self) -> None:
+        env = {"LLM_BASE_URL": BASE, "LLM_MODEL": "m", "LLM_TIMEOUT_SECONDS": "45"}
+        settings = LLMSettings.from_env(env)
+        assert settings is not None and settings.timeout == 45.0
+
+
+HOST = "http://host.test/v1"
+BUNDLED = "http://bundled.test/v1"
+BOTH = {
+    "LLM_BASE_URL": HOST,
+    "LLM_MODEL": "big",
+    "LLM_API_KEY": KEY,
+    "LLM_FALLBACK_BASE_URL": BUNDLED,
+    "LLM_FALLBACK_MODEL": "small",
+}
+
+
+class TestChoosingAModel:
+    """Ollama on the computer is fast. The bundled one needs no install, but is slow (D-033)."""
+
+    def test_the_first_choice_is_used_when_it_has_the_model(self) -> None:
+        chosen = choose_settings(BOTH, probe=lambda settings: True)
+        assert chosen is not None and (chosen.base_url, chosen.model) == (HOST, "big")
+        assert chosen.api_key == KEY
+
+    def test_the_fallback_is_used_when_the_first_choice_is_not_there(self) -> None:
+        asked: list[str] = []
+
+        def probe(settings: LLMSettings) -> bool:
+            asked.append(settings.base_url)
+            return False
+
+        chosen = choose_settings(BOTH, probe=probe)
+        assert chosen is not None and (chosen.base_url, chosen.model) == (BUNDLED, "small")
+        assert asked == [HOST]
+
+    def test_the_fallback_is_slow_so_it_gets_a_minute(self) -> None:
+        chosen = choose_settings(BOTH, probe=lambda settings: False)
+        assert chosen is not None and chosen.timeout == 60.0
+        env = {**BOTH, "LLM_FALLBACK_TIMEOUT_SECONDS": "90"}
+        chosen = choose_settings(env, probe=lambda settings: False)
+        assert chosen is not None and chosen.timeout == 90.0
+
+    def test_the_fallback_never_receives_the_api_key(self) -> None:
+        chosen = choose_settings(BOTH, probe=lambda settings: False)
+        assert chosen is not None and chosen.api_key == ""
+
+    def test_the_fallback_shares_the_reasoning_setting(self) -> None:
+        env = {**BOTH, "LLM_REASONING_EFFORT": "none"}
+        chosen = choose_settings(env, probe=lambda settings: False)
+        assert chosen is not None and chosen.reasoning_effort == "none"
+
+    def test_with_no_fallback_nothing_is_checked(self) -> None:
+        def probe(settings: LLMSettings) -> bool:
+            raise AssertionError("checked")
+
+        env = {"LLM_BASE_URL": HOST, "LLM_MODEL": "big"}
+        chosen = choose_settings(env, probe=probe)
+        assert chosen is not None and chosen.base_url == HOST
+
+    def test_a_fallback_alone_is_used(self) -> None:
+        env = {"LLM_FALLBACK_BASE_URL": BUNDLED, "LLM_FALLBACK_MODEL": "small"}
+        chosen = choose_settings(env, probe=lambda settings: True)
+        assert chosen is not None and chosen.base_url == BUNDLED
+
+    def test_nothing_configured_means_no_model(self) -> None:
+        assert choose_settings({}, probe=lambda settings: True) is None
+
+
+class TestProbe:
+    MODELS = f"{HOST}/models"
+    SETTINGS = LLMSettings(base_url=HOST, api_key=KEY, model="big")
+
+    def test_it_is_there_when_the_model_is_listed(self, api: Any) -> None:
+        route = api.get(self.MODELS).mock(
+            httpx.Response(200, json={"data": [{"id": "small"}, {"id": "big"}]})
+        )
+        assert has_model(self.SETTINGS)
+        assert route.calls.last.request.headers["authorization"] == f"Bearer {KEY}"
+
+    def test_it_is_not_there_when_the_model_is_missing(self, api: Any) -> None:
+        api.get(self.MODELS).mock(httpx.Response(200, json={"data": [{"id": "small"}]}))
+        assert not has_model(self.SETTINGS)
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            httpx.ConnectError("refused"),
+            httpx.ReadTimeout("slow"),
+            httpx.Response(500),
+            httpx.Response(200, text="not json"),
+            httpx.Response(200, json={"unexpected": True}),
+        ],
+    )
+    def test_any_failure_means_not_there(self, api: Any, reply: Any) -> None:
+        route = api.get(self.MODELS)
+        if isinstance(reply, Exception):
+            route.mock(side_effect=reply)
+        else:
+            route.mock(reply)
+        assert not has_model(self.SETTINGS)
+
+    def test_it_waits_at_most_two_seconds(self, api: Any) -> None:
+        seen: list[Any] = []
+
+        def record(request: httpx.Request) -> httpx.Response:
+            seen.append(request.extensions["timeout"])
+            return httpx.Response(200, json={"data": []})
+
+        api.get(self.MODELS).mock(side_effect=record)
+        has_model(self.SETTINGS)
+        assert max(value for value in seen[0].values() if value) <= 2.0
 
 
 class TestRequests:

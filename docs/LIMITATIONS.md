@@ -74,6 +74,9 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 - Old or 32-bit systems, and phones as a server, are not supported.
 - Ports 4010, 4173, and 4020 are fixed, as the brief and the platform set them.
 - The root `README.md` does not mention port 4020 or `run.py`, and was left unchanged on request.
+  `WEBCHAT.md` beside it covers them instead, so a reader has to notice a second file.
+- Docker makes its own pepper and keeps it on the same machine as the data, in a separate volume.
+  No secrets manager is used (D-032).
 
 ## Widget
 
@@ -149,8 +152,15 @@ Also known:
 
 ## Workflows
 
-- The pipeline around the machine is only partly built. The chat turn, LLM interpretation,
-  composition, grounding, and the widget do not exist yet.
+- A booking check asks for the registration as well as the reference, surname, and phone. The
+  platform requires all four and rejects a lookup without any one, so it cannot be dropped.
+- New chat keeps the old conversation in the database, with no retention limit, and is unavailable
+  while a request is being sent or its outcome is unknown (D-036).
+- Cancel only works before anything is sent. Once a customer confirms, the booking cannot be
+  dropped from the chat, and a sent booking needs the cancel workflow (D-035).
+- A form put aside by a new question comes back only through its Continue button. The model is not
+  asked whether a message continues the task, so "my reg is AB12 CDE" typed as a message is read as
+  a new question.
 - A value counts as `user` if it appears in the customer's message, even if they meant something
   else by it. Internal IDs do not match customer wording, so they stay `inferred` and get confirmed.
 - A reference locked in another session also locks the current session until that lock ends, so a
@@ -163,8 +173,14 @@ Also known:
 - A model turn takes a median of 6.8 seconds on an M1 Pro, longer after a regeneration (D-023).
 - Customers share one local model, so simultaneous chats queue (D-019).
 - Replies can be plainer, and template fallback more common, than with a stronger hosted model.
-- Running the full experience needs Ollama and about 6.6 GB for the model. Without them the app
-  runs in degraded mode.
+- Without Ollama on the computer, the chat uses a smaller model bundled in Docker. It needs no
+  install, but AI replies took 25 to 80 seconds on Docker's default 2 cores, and it understands
+  less (D-033). In one check it answered "is the second one still available?" without naming the
+  car, and showed stray markup in a reply.
+- The first Docker start downloads 4 to 5 GB and uses about 10 GB of disk, even when the computer's
+  Ollama is used instead. Most of the Ollama image is graphics-card libraries a Mac cannot use.
+- Which model to use is decided once, at start. Starting Ollama later needs a webchat restart.
+- With the bundled model, a message that needs several model calls can take over a minute.
 - Model accuracy comes from a 15-case check, not a proper evaluation.
 
 ## Not yet verified

@@ -49,6 +49,9 @@ export interface View {
   fields: Field[];
   reference: string | null;
   can_check_again: boolean;
+  /** A later question put the form or card aside, behind a button labelled `resume`. */
+  hidden: boolean;
+  resume: string;
 }
 
 export interface Transcript {
@@ -126,6 +129,18 @@ export class Api {
 
   async checkAgain(): Promise<View> {
     return this.json(await this.post("/api/confirmations/check-again"));
+  }
+
+  async continueForm(): Promise<View> {
+    return this.json(await this.post("/api/conversation/continue"));
+  }
+
+  async newChat(): Promise<void> {
+    await this.json(await this.post("/api/session/new"));
+  }
+
+  async cancelTask(): Promise<View> {
+    return this.json(await this.post("/api/conversation/cancel"));
   }
 
   /** Only answers when the server has the inspector switched on. */

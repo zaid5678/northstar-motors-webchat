@@ -85,7 +85,9 @@ from .fields import FormBuilder, identity_fields
 from .prepare import CancelRequest, Prepared, Preparer, Refused
 from .present import (
     COLLECTING_REASONS,
+    HIDEABLE,
     PROCESSING,
+    RESUME,
     REFUSALS,
     UNKNOWN,
     ConfirmationBlock,
@@ -520,7 +522,24 @@ class WriteService:
             expires_at=pending.expires_at.isoformat(),
         )
 
+    async def hide_form(self, session_id: str) -> None:
+        """The customer asked something else. Nothing about the task changes (D-034). `view`
+        decides what can be hidden, and every change to the task clears this, so a form that
+        appears later is always shown."""
+        self.store.hide_form(session_id, self._now())
+
+    async def show_form(self, session_id: str) -> View:
+        self.store.show_form(session_id)
+        return await self.view(session_id)
+
     async def view(self, session_id: str, reply: _Reply | None = None) -> View:
+        view = await self._view(session_id, reply)
+        workflow = self.store.load(session_id).active
+        if workflow is None or view.status not in HIDEABLE or not self.store.form_hidden(session_id):
+            return view
+        return view.model_copy(update={"hidden": True, "resume": RESUME[workflow.kind]})
+
+    async def _view(self, session_id: str, reply: _Reply | None = None) -> View:
         reply = reply or _Reply()
         session = apply_expiry(self.store.load(session_id), self._now())
         workflow = session.active

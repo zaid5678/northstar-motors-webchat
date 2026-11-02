@@ -120,3 +120,14 @@ jobs:
           curl --fail --silent --show-error http://localhost:4173/ > /dev/null
           curl --fail --silent --show-error http://localhost:4020/health
           curl --fail --silent --show-error http://localhost:4020/widget.js > /dev/null
+      - name: With no Ollama installed, the bundled model answers
+        run: |
+          docker compose logs webchat | grep '"event": "startup"' | grep '"llm_choice": "fallback"'
+          jar=$(mktemp)
+          curl --fail -s -c $jar -b $jar -X POST -H "Origin: http://localhost:4173" \
+            http://localhost:4020/api/session > /dev/null
+          reply=$(curl --fail -s -c $jar -b $jar -X POST -H "Origin: http://localhost:4173" \
+            -H "Content-Type: application/json" -d '{"text":"what time does bolton open on sunday"}' \
+            http://localhost:4020/api/chat/message)
+          echo "$reply"
+          docker compose logs webchat | grep '"event": "turn"' | grep '"interpretation": "model"'

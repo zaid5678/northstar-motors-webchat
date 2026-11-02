@@ -34,6 +34,7 @@ from ..workflows.types import (
 )
 from .tables import (
     events,
+    hidden_forms,
     messages,
     reference_failures,
     search_memory,
@@ -191,6 +192,8 @@ class Store:
                 phase,
                 _payload(item),
             )
+            # Anything that moves the task on, or is refused by it, needs the form seen (D-034).
+            connection.execute(hidden_forms.delete().where(hidden_forms.c.session_id == session_id))
             if result.accepted:
                 self._save(connection, session_id, result.session, moment)
         return result
@@ -411,6 +414,22 @@ class Store:
                 select(search_memory.c.data).where(search_memory.c.session_id == session_id)
             )
         return None if data is None else dict(json.loads(data))
+
+    def hide_form(self, session_id: str, at: datetime) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(hidden_forms.delete().where(hidden_forms.c.session_id == session_id))
+            connection.execute(insert(hidden_forms).values(session_id=session_id, at=at))
+
+    def show_form(self, session_id: str) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(hidden_forms.delete().where(hidden_forms.c.session_id == session_id))
+
+    def form_hidden(self, session_id: str) -> bool:
+        with self.engine.begin() as connection:
+            found = connection.scalar(
+                select(hidden_forms.c.session_id).where(hidden_forms.c.session_id == session_id)
+            )
+        return found is not None
 
     def reference_failures_total(self) -> int:
         with self.engine.begin() as connection:

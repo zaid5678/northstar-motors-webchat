@@ -87,6 +87,13 @@ search_memory = Table(
     Column("at", DateTime(timezone=True), nullable=False),
 )
 
+hidden_forms = Table(
+    "hidden_forms",
+    metadata,
+    Column("session_id", String(64), primary_key=True),
+    Column("at", DateTime(timezone=True), nullable=False),
+)
+
 reference_failures = Table(
     "reference_failures",
     metadata,

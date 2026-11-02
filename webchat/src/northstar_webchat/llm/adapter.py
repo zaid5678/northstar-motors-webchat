@@ -40,7 +40,44 @@ class LLMSettings:
             api_key=values.get("LLM_API_KEY", ""),
             model=model,
             reasoning_effort=values.get("LLM_REASONING_EFFORT") or None,
+            timeout=float(values.get("LLM_TIMEOUT_SECONDS") or 20.0),
         )
+
+    @classmethod
+    def fallback_from_env(cls, env: Mapping[str, str]) -> LLMSettings | None:
+        """A local model for when the first choice is missing. It never gets the API key."""
+        base_url, model = env.get("LLM_FALLBACK_BASE_URL"), env.get("LLM_FALLBACK_MODEL")
+        if not base_url or not model:
+            return None
+        return cls(
+            base_url=base_url.rstrip("/"),
+            api_key="",
+            model=model,
+            reasoning_effort=env.get("LLM_REASONING_EFFORT") or None,
+            timeout=float(env.get("LLM_FALLBACK_TIMEOUT_SECONDS") or 60.0),
+        )
+
+
+def has_model(settings: LLMSettings) -> bool:
+    """Whether the server answers within two seconds and lists the model. Any failure is a no."""
+    headers = {"Authorization": f"Bearer {settings.api_key}"} if settings.api_key else {}
+    try:
+        response = httpx.get(f"{settings.base_url}/models", headers=headers, timeout=2.0)
+        listed = {item["id"] for item in response.json()["data"]}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return False
+    return response.is_success and settings.model in listed
+
+
+def choose_settings(
+    env: Mapping[str, str], *, probe: Callable[[LLMSettings], bool] = has_model
+) -> LLMSettings | None:
+    """The first choice when it has the model, otherwise the fallback (D-033). Checked once, at
+    start, so a first choice that appears later is only used after a restart."""
+    first, fallback = LLMSettings.from_env(env), LLMSettings.fallback_from_env(env)
+    if first is None or fallback is None:
+        return first or fallback
+    return first if probe(first) else fallback
 
 
 class OpenAICompatibleLLM:
@@ -178,8 +215,7 @@ class GuardedLLM:
         return reply
 
 
-def build_llm(env: Mapping[str, str] | None = None) -> LLMClient:
-    settings = LLMSettings.from_env(env)
+def build_llm(settings: LLMSettings | None) -> LLMClient:
     if settings is None:
         return UnconfiguredLLM()
     return GuardedLLM(OpenAICompatibleLLM(settings))

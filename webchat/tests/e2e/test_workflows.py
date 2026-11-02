@@ -265,3 +265,92 @@ class TestWorkshop:
         # Still verified, so no form: the booking is read again and shown as it now is.
         page.get_by_role("button", name="Check my booking", exact=True).click()
         expect(log(page)).to_contain_text("Status: cancelled")
+
+
+class TestANewQuestionPutsTheFormAside:
+    """No real customer chat keeps a form pinned under every later answer (D-034)."""
+
+    RESUME = "Continue checking your booking"
+
+    def ask(self, page: Page, text: str) -> None:
+        box = page.get_by_role("textbox", name="Your message")
+        expect(box).to_be_enabled()
+        box.fill(text)
+        box.press("Enter")
+
+    def test_the_form_goes_and_continue_brings_it_back(self, page: Page) -> None:
+        begin(page, "Check my booking")
+        expect(page.locator("form.form")).to_be_visible()
+        self.ask(page, "what time does bolton open")
+        expect(log(page)).to_contain_text("Northstar Bolton")
+        expect(page.locator("form.form")).to_have_count(0)
+        page.get_by_role("button", name=self.RESUME).click()
+        fill_form(page, TAYLOR)
+        page.get_by_role("button", name="Continue", exact=True).click()
+        expect(log(page)).to_contain_text("Full service at Northstar Manchester")
+
+    def test_it_stays_aside_after_a_refresh(self, page: Page) -> None:
+        begin(page, "Check my booking")
+        # A message sent while the button's reply is still coming is ignored, so wait for it.
+        expect(page.locator("form.form")).to_be_visible()
+        self.ask(page, "what time does bolton open")
+        expect(page.get_by_role("button", name=self.RESUME)).to_be_visible()
+        page.reload()
+        page.get_by_role("button", name="Open chat").click()
+        expect(page.get_by_role("button", name=self.RESUME)).to_be_visible()
+        expect(page.locator("form.form")).to_have_count(0)
+
+
+class TestCancellingATask:
+    """Before D-035 the chat said "Finish or cancel", with no way to cancel."""
+
+    CANCELLED = "That's cancelled, and nothing was sent to the dealership."
+
+    def test_a_form_can_be_cancelled_and_another_task_started(self, page: Page) -> None:
+        begin(page, "Check my booking")
+        expect(page.locator("form.form")).to_be_visible()
+        log(page).get_by_role("button", name="Cancel", exact=True).click()
+        expect(log(page)).to_contain_text(self.CANCELLED)
+        expect(page.locator("form.form")).to_have_count(0)
+        page.get_by_role("button", name="Request a callback", exact=True).click()
+        expect(field(page, "What is it about?")).to_be_visible()
+
+    def test_a_confirmation_card_can_be_cancelled(self, page: Page) -> None:
+        begin(page, "Request a callback")
+        continue_until_card(
+            page,
+            {
+                "Dealership": "Northstar Manchester",
+                "Department": "Sales",
+                "What is it about?": "Discuss finance options",
+                **CONTACT,
+            },
+        )
+        log(page).get_by_role("button", name="Cancel", exact=True).click()
+        expect(log(page)).to_contain_text(self.CANCELLED)
+        expect(page.get_by_role("button", name="Confirm")).to_have_count(0)
+
+
+class TestNewChat:
+    """A customer can start afresh, and a refresh does not bring the old chat back (D-036)."""
+
+    def test_a_new_chat_is_empty_and_stays_empty(self, page: Page) -> None:
+        begin(page, "Opening hours")
+        expect(log(page)).to_contain_text("Northstar")
+        page.get_by_role("button", name="New chat").click()
+        page.get_by_role("button", name="Start new chat").click()
+        expect(log(page)).not_to_contain_text("Northstar Manchester")
+        expect(page.get_by_role("textbox", name="Your message")).to_be_enabled()
+        page.reload()
+        page.get_by_role("button", name="Open chat").click()
+        expect(page.get_by_role("textbox", name="Your message")).to_be_enabled()
+        expect(log(page)).not_to_contain_text("Northstar Manchester")
+
+    def test_an_open_form_is_dropped(self, page: Page) -> None:
+        begin(page, "Check my booking")
+        expect(page.locator("form.form")).to_be_visible()
+        page.get_by_role("button", name="New chat").click()
+        page.get_by_role("button", name="Start new chat").click()
+        expect(page.locator("form.form")).to_have_count(0)
+        page.get_by_role("button", name="Request a callback", exact=True).click()
+        expect(field(page, "What is it about?")).to_be_visible()

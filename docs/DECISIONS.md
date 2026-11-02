@@ -1159,3 +1159,206 @@ line.
 **Revisit if:** the service runs as several processes, or needs metrics and alerts. The metric
 names in `docs/SCALING.md` would then be added.
 
+---
+
+## D-032: Docker makes its own pepper instead of using a committed one
+
+**Date:** 2026-11-02. **Status:** accepted. The user allowed the change if the benefit was
+substantial.
+
+**Context:** the pepper keys the hash of booking references, which drives the lockout after
+repeated failed identity checks. `compose.yaml` fell back to a committed value,
+`local-development-only`. The brief says secret values must not be committed, and references are
+short, so anyone who knows the pepper can reverse every stored hash. `run.py` already made a random
+one.
+
+**Options:**
+
+- **A. Keep the committed fallback.** Nothing changes, but every Docker install shares a public
+  pepper.
+- **B. Require the person running it to set `WEBCHAT_PEPPER`.** Safe, but `docker compose up` would
+  no longer work from a clean checkout.
+- **C. Make one on first start.** `WEBCHAT_PEPPER_FILE` names a file, and the server creates a random
+  pepper there once, readable only by its owner.
+
+**Choice:** C. Each install has its own secret, nothing is committed, and the start command is
+unchanged. A set `WEBCHAT_PEPPER` still wins.
+
+**Consequences:**
+
+- Docker keeps the pepper in its own volume, `northstar-webchat-secrets`, apart from the database,
+  so a copy of the database alone does not reveal it.
+- Anyone with access to the whole machine can still read both.
+- Deleting that volume resets lockouts, and interrupts any cancel or change in progress.
+
+**Evidence:** 5 of 5 deliberate breaks were caught: overwriting on restart, loose file permissions, a
+fixed value, accepting an empty file, and not using the saved value.
+
+**Revisit if:** the service is deployed where a secrets manager exists. It should supply
+`WEBCHAT_PEPPER` directly.
+
+---
+
+## D-033: Ollama on the computer when it has the model, otherwise a model bundled in Docker
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option, after a first choice was
+measured and failed.
+
+**Context:** the user asked that a reviewer need not install anything. The AI needed Ollama on the
+computer, and without it the chat ran in degraded mode. D-026 keeps customer messages on the
+machine, so a hosted model was ruled out.
+
+**First choice, measured and dropped:** `qwen2.5:3b` in Docker as the only model. It fits Docker's
+default memory, but Docker cannot use a Mac's graphics chip. In the real chat, on 2 cores, about
+half of the messages missed the 20-second limit. On 6 cores, replies took 16 to 28 seconds, and 3 of
+8 still timed out. Writing replies was the slow part. Understanding a message took 2 to 6 seconds.
+
+**Options, second round:**
+
+- **A. Ollama on the computer if it has the model, otherwise the bundled model with 60 seconds.**
+- **B. The bundled model for everyone, with 60 seconds.** Simple, but slow even for people with
+  Ollama.
+- **C. Back to Ollama on the computer only.** Fast, but no AI without an install.
+
+**Choice:** A.
+
+**How it works:**
+
+- `LLM_FALLBACK_BASE_URL` and `LLM_FALLBACK_MODEL` name a second model.
+- At start, the chat asks the first choice for its model list, waiting at most 2 seconds. If the
+  model is not listed, or anything fails, it uses the fallback.
+- The fallback is never sent `LLM_API_KEY`, so a hosted model's key cannot leak to it.
+- Each has its own limit: `LLM_TIMEOUT_SECONDS`, 20 by default, and `LLM_FALLBACK_TIMEOUT_SECONDS`,
+  60 by default.
+- Compose runs Ollama in a container, with no port opened on the computer, and a one-off service
+  downloads the model. If the download fails, the chat still starts.
+- The startup log line records `llm_choice`.
+
+**Consequences:**
+
+- Every first start downloads 4 to 5 GB, and uses about 10 GB of disk, for the model and its server.
+  That happens even when the computer's Ollama is used.
+- With the bundled model, a reply can take a minute or more, because one message can make up to four
+  model calls.
+
+**Evidence:** the same 8 messages through the real chat, on Docker's default 2 cores. Bundled: all 8
+understood, none fell back, AI replies in 24 to 79 seconds. Ollama on the computer: all 8
+understood, AI replies in 6 to 15 seconds. Replies written by code took 3 to 4 seconds with Ollama
+on the computer, and 3 to 59 seconds with the bundled model.
+- The choice is made once. Starting Ollama later needs `docker compose restart webchat`.
+- The bundled model understands less. In the 15-message check from D-023 it scored 13 of 15,
+  against 15 of 15 for `qwen3.5:9b`. Code still checks everything it says.
+
+**Revisit if:** customer messages may leave the machine, so a hosted model could be the fallback, or
+Docker gains graphics-chip access on Macs.
+
+---
+
+## D-034: A new question puts an unfinished form aside, behind a Continue button
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option.
+
+**Context:** an unfinished form or confirmation card stayed pinned under every later reply. The user
+asked for it to go when a new question is asked, as in a real customer chat. They also asked to drop
+the registration from the booking check. The platform requires the reference, surname,
+registration, and phone, and rejects a lookup missing any one, so that part was not changed.
+
+**Options:**
+
+- **A. Hide it, and offer Continue.** The task is kept, and a button brings the form back.
+- **B. Cancel the task.** Simplest, but a customer who asks a quick question loses what they entered.
+
+**Choice:** A.
+
+**How it works:**
+
+- Every typed message or button press hides the form first. A `hidden_forms` row records it, so it
+  stays hidden after a refresh.
+- Every event applied to the task, accepted or refused, deletes that row in the same transaction.
+  So a turn about the task, or an answer from a second tab, shows the form again.
+- Only a form or a confirmation card can be hidden. Anything being sent, or of unknown outcome, is
+  always shown.
+- `View` gains `hidden` and `resume`, a label such as "Continue checking your booking".
+  `POST /api/conversation/continue` shows the form again, without adding a turn or touching the
+  task.
+
+**Consequences:**
+
+- Nothing about the task changes when it is hidden, so the machine's rules and expiry still apply.
+- A message that answers the form, such as a typed registration, is treated as a new question.
+
+**Evidence:** 15 server tests, 2 API tests, 5 widget tests, and 2 browser tests. 5 of 6 deliberate
+breaks on the server and 4 of 4 in the widget were caught. The sixth showed a redundant check, which
+was removed.
+
+**Revisit if:** customers often type their details instead of using the form.
+
+
+---
+
+## D-035: A customer can cancel an unfinished task
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option.
+
+**Context:** found while building D-034. Starting a second task replied "Finish or cancel what
+you're doing first.", but nothing in the chat could cancel. A customer had to finish the task or
+wait for it to expire. The machine could already abandon a task safely, but only a test used it.
+
+**Options:**
+
+- **A. A Cancel button beside each form, card, locked message, and Continue button.**
+- **B. Leave it as a known gap.**
+
+**Choice:** A.
+
+**How it works:**
+
+- `POST /api/conversation/cancel` abandons the task only in the phases the machine allows:
+  collecting, verifying, locked, and awaiting confirmation. In any other phase, including while a
+  booking is being sent, it changes nothing and returns the current view.
+- A cancel adds "That's cancelled, and nothing was sent to the dealership.", with the main menu, to
+  the transcript once, even if Cancel is pressed twice.
+- A cancelled card's token no longer confirms, and no write request is made.
+
+**Evidence:** 7 API tests, 9 widget tests, and 2 browser tests. The machine tests already showed that
+a confirmed write cannot be abandoned, and that the model cannot abandon anything. 4 of 4 deliberate
+breaks in the widget were caught.
+
+**Revisit if:** customers need to stop a write after confirming it.
+
+---
+
+## D-036: A New chat button starts a fresh session, and keeps the old one on the server
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option.
+
+**Context:** the user asked that customers can start a new chat. The session cookie is HTTP-only, so
+only the server can replace it.
+
+**Options:**
+
+- **A. A new session, with the old conversation kept on the server, unseen.**
+- **B. The same, but the old messages and saved search are deleted.** More private, but support loses
+  the transcript, and write records must be kept anyway.
+
+**Choice:** A.
+
+**How it works:**
+
+- `POST /api/session/new` sets a new cookie, with the same `HttpOnly`, `SameSite=Lax`, and 30-day
+  settings as the first.
+- An unfinished form or card in the old session is abandoned first, so it does not linger.
+- It is refused with 409 while a write is being sent or its outcome is unknown. Otherwise the
+  customer would lose its result, or the Check again button for a booking that may exist.
+- The widget's header has a New chat button, disabled at those times. It asks "Start a new chat?"
+  before clearing anything, so a mis-tap loses nothing.
+
+**Consequences:**
+
+- Old conversations stay in the database until it is cleared. There is no retention limit yet.
+- The customer cannot get the old chat back.
+
+**Evidence:** 6 API tests, 6 widget tests, and 2 browser tests. 3 of 3 deliberate breaks on the server
+and 4 of 4 in the widget were caught.
+
+**Revisit if:** a retention policy is set, or customers ask to see past chats.

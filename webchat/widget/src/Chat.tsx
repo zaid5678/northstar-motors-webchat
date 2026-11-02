@@ -13,6 +13,8 @@ const LOADING = "Loading…";
 const WAITING = "Working on your last message…";
 // Once a write has settled, its result is in the saved transcript.
 const SETTLED = new Set(["completed", "failed", "unknown", "two_bookings"]);
+// A new chat would lose the result, or the Check again button, so it waits (D-036).
+const SENDING = new Set(["processing", "unknown"]);
 
 type Boot = "loading" | "ready" | "unavailable";
 
@@ -86,6 +88,7 @@ export function Chat({ api }: { api: Api }) {
   const [unread, setUnread] = useState(0);
   const [busy, setBusy] = useState(false);
   const [inspection, setInspection] = useState<Inspection | null>(null);
+  const [askingNew, setAskingNew] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -166,7 +169,8 @@ export function Chat({ api }: { api: Api }) {
 
   // A disabled box cannot take focus, so someone who opened the chat during loading gets it now.
   useEffect(() => {
-    if (open && boot === "ready" && !view?.block && !view?.fields.length) boxRef.current?.focus();
+    const form = !view?.hidden && (view?.block || view?.fields.length);
+    if (open && boot === "ready" && !form) boxRef.current?.focus();
   }, [open, boot, view]);
 
   useEffect(() => {
@@ -243,6 +247,48 @@ export function Chat({ api }: { api: Api }) {
     }
   };
 
+  const bringBack = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setView(await api.continueForm());
+    } catch {
+      setError("We couldn't do that. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startNewChat = async () => {
+    setAskingNew(false);
+    setBusy(true);
+    setError("");
+    try {
+      await api.newChat();
+      setDraft("");
+      await load();
+      boxRef.current?.focus();
+    } catch {
+      setError("We couldn't start a new chat. Please wait until your request has been sent.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelTask = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setView(await api.cancelTask());
+      setMessages((await api.transcript()).messages);
+      boxRef.current?.focus();
+    } catch {
+      setError("We couldn't cancel that. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const settle = async (write: () => Promise<View>) => {
     if (claimed.current) return;
     claimed.current = true;
@@ -282,7 +328,12 @@ export function Chat({ api }: { api: Api }) {
 
   const last = messages.length - 1;
   const fields = view?.fields ?? [];
-  const showForm = fields.length > 0 && (view?.status === "collecting" || view?.status === "verifying");
+  const aside = Boolean(view?.hidden);
+  const showForm =
+    !aside && fields.length > 0 && (view?.status === "collecting" || view?.status === "verifying");
+  // Only before anything is sent. The server refuses a cancel after that anyway.
+  const cancellable =
+    aside || showForm || (view?.status === "confirming" && Boolean(view.block)) || view?.status === "locked";
   const statusText = boot === "loading" ? LOADING : stage;
   return (
     <div
@@ -300,8 +351,25 @@ export function Chat({ api }: { api: Api }) {
     >
       <div className="header">
         <span>Northstar Motors</span>
+        <button
+          className="new-chat"
+          type="button"
+          disabled={busy || boot !== "ready" || SENDING.has(view?.status ?? "")}
+          onClick={() => setAskingNew(true)}
+        >
+          New chat
+        </button>
         <button className="close" type="button" aria-label="Close chat" onClick={() => setOpen(false)}>×</button>
       </div>
+      {askingNew && (
+        <div className="confirm-new" role="group" aria-label="Start a new chat?">
+          <p>Start a new chat? This conversation will be cleared from this window.</p>
+          <div className="actions">
+            <button className="primary" type="button" onClick={() => void startNewChat()}>Start new chat</button>
+            <button className="action" type="button" onClick={() => setAskingNew(false)}>Keep chatting</button>
+          </div>
+        </div>
+      )}
       {boot === "unavailable" ? (
         <div className="unavailable">
           <p role="alert">Chat is unavailable right now.</p>
@@ -325,12 +393,24 @@ export function Chat({ api }: { api: Api }) {
             {showForm && view && (
               <Form key={fields.map((field) => field.name).join()} fields={fields} disabled={busy} onSubmit={fillForm} />
             )}
-            {view?.status === "confirming" && view.block && (
+            {!aside && view?.status === "confirming" && view.block && (
               <Confirmation
                 block={view.block}
                 busy={busy}
                 onConfirm={() => void settle(() => api.confirm(view.block!.token))}
               />
+            )}
+            {cancellable && view && (
+              <div className="actions">
+                {aside && (
+                  <button className="action" type="button" disabled={busy} onClick={() => void bringBack()}>
+                    {view.resume}
+                  </button>
+                )}
+                <button className="action" type="button" disabled={busy} onClick={() => void cancelTask()}>
+                  Cancel
+                </button>
+              </div>
             )}
             {view?.can_check_again && (
               <button className="primary" type="button" disabled={busy} onClick={() => void settle(() => api.checkAgain())}>
