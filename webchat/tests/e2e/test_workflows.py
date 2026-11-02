@@ -44,18 +44,27 @@ def field(page: Page, label: str) -> Locator:
     )
 
 
+def form_text(page: Page) -> str:
+    """The form's text, or nothing once it has gone. Reading it never waits."""
+    return page.locator("form.form").evaluate_all(
+        "elements => elements.map(item => item.innerText).join('')"
+    )
+
+
 def fill_form(page: Page, values: dict[str, str]) -> None:
     form = page.locator("form.form")
     expect(form).to_be_visible()
     for label, value in values.items():
         control = field(page, label)
-        if not control.count():
+        # None of these calls wait: the form can turn into the card at any moment on a slow machine.
+        tag = control.evaluate_all("elements => elements.length ? elements[0].tagName : ''")
+        if not tag:
             continue
-        if control.evaluate("element => element.tagName") == "SELECT":
+        if tag == "SELECT":
             if value == FIRST:
-                control.select_option(index=1)
+                control.select_option(index=1, timeout=5000)
             else:
-                control.select_option(label=value)
+                control.select_option(label=value, timeout=5000)
         else:
             control.fill(value, timeout=5000)
 
@@ -67,8 +76,7 @@ def continue_until_card(page: Page, values: dict[str, str]) -> None:
     for _ in range(4):
         if confirm.count():
             return
-        form = page.locator("form.form")
-        before = form.inner_text() if form.count() else ""
+        before = form_text(page)
         try:
             fill_form(page, values)
             proceed.click(timeout=5000)
@@ -76,8 +84,9 @@ def continue_until_card(page: Page, values: dict[str, str]) -> None:
             continue  # The form turned into the card while this pass was filling it.
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
-            idle = proceed.count() == 0 or proceed.is_enabled()
-            if confirm.count() or (idle and form.count() and form.inner_text() != before):
+            now = form_text(page)
+            idle = proceed.evaluate_all("elements => elements.every(item => !item.disabled)")
+            if confirm.count() or (idle and now and now != before):
                 break
             page.wait_for_timeout(100)
         page.wait_for_timeout(400)  # Let the widget finish before reading what it shows.
