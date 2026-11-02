@@ -90,8 +90,9 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
 
 @pytest.fixture(scope="package")
 def browser(stack: None) -> Iterator[Browser]:
+    # E2E_BROWSER=webkit runs Safari's engine, as on every iPhone. firefox is also accepted.
     with sync_playwright() as driver:
-        instance = driver.chromium.launch()
+        instance = getattr(driver, os.environ.get("E2E_BROWSER", "chromium")).launch()
         yield instance
         instance.close()
 
@@ -116,6 +117,10 @@ def page(browser: Browser) -> Iterator[Page]:
     instance.goto(SITE)
     yield instance
     context.close()
+    # Safari's engine reports a request cut short by a reload or navigation as a page error. The
+    # page that sent it is gone, so no customer sees it. A real CORS fault would still fail the
+    # test, because every test needs its requests to succeed.
+    errors = [item for item in errors if not item.endswith("due to access control checks.")]
     assert not errors, errors
 
 

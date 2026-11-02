@@ -66,7 +66,8 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 `run.py`, and Docker on Linux. Gaps:
 
 - Docker Desktop on Windows and macOS is not covered, because those build machines cannot run it.
-- Each machine's browser tests use Chromium only.
+- Browser tests run in Chromium on every machine, and in WebKit (Safari's engine) and Firefox on
+  Linux only.
 - The Linux Ollama setup in `webchat/README.md` has not been tried.
 - AI reply speed depends on the computer. Only one machine has been measured.
 - Machines with no Docker, and no Python 3.11 or Node, cannot run it at all.
@@ -81,8 +82,13 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 - Optional fields are not marked on screen. A required field is enforced, and an optional one is not.
 - A cancel card shows the booking reference, service, and place, but not the appointment time.
 
-- Tested in Chromium only. Safari and Firefox have not been tried, and neither has a real screen
-  reader. Accessibility checks are automated, and automation finds only some problems.
+- Tested in Chromium, WebKit (Safari's engine), and Firefox, with phones simulated by screen size and
+  touch. No real phone, tablet, or screen reader has been tried. Accessibility checks are automated,
+  and automation finds only some problems.
+- Phones were simulated at one size, 390 by 740. Landscape, tablets, and very small screens have
+  not been checked.
+- A phone can only reach the chat if the computer running it is reachable on the network. Running
+  it for real customers needs hosting, which this repository does not set up.
 - The open panel covers part of the page behind it, including inside the vehicle dialog.
 - Form field errors are general, and do not yet point at the field that failed.
 - Customers cannot abandon a workflow from the widget, and there is no button to delete a chat (D-017).
