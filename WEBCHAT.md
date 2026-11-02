@@ -50,13 +50,66 @@ docker compose down -v  # stop and delete all saved data
 
 ## Without Docker
 
-With Python 3.11 or later and Node 20.19 or later:
+`run.py` starts the same three parts directly, on Windows, macOS, or Linux.
+
+### 1. Install
+
+| What | Version | Where to get it | Needed |
+| --- | --- | --- | --- |
+| Python | 3.11 or later | [python.org/downloads](https://www.python.org/downloads/) | Always |
+| Node.js | 22.12 or later, or 20.19 or later | [nodejs.org](https://nodejs.org) (the LTS version) | First run only, to build the chat widget |
+| Ollama | Any recent version | [ollama.com/download](https://ollama.com/download) | Optional, for AI replies |
+
+- **Windows:** in the Python installer, tick "Add python.exe to PATH".
+- **macOS:** the installers above work. With [Homebrew](https://brew.sh), `brew install python node`
+  also works.
+- **Linux:** use your package manager, for example `sudo apt install python3 python3-venv nodejs`.
+  Check the versions it gives you. Older releases may ship versions that are too old.
+
+Check what you have:
 
 ```bash
-python run.py
+python --version   # macOS and Linux may need python3
+node --version
 ```
 
-Press Ctrl+C to stop.
+### 2. Run
+
+From this folder:
+
+```bash
+python run.py      # macOS and Linux may need python3 run.py
+```
+
+The first run downloads and installs what the chat needs into `webchat/.local`, which takes a few
+minutes and needs internet. Later runs start in seconds. When it says so, open
+http://localhost:4173. Press Ctrl+C to stop all three parts.
+
+Ports 4010, 4173, and 4020 must be free. `python run.py --check` starts everything, confirms each
+part answers, and stops.
+
+### 3. AI
+
+Without Docker there is no bundled model. The chat uses Ollama on the computer, so for AI replies,
+install Ollama and download the model once. It is 6.6 GB, and needs about 8 GB of free memory:
+
+```bash
+ollama pull qwen3.5:9b
+```
+
+The chat uses it as soon as Ollama is running, with no restart. Without Ollama, the chat still
+works in its reduced mode: replies are written by code, and searches, bookings, lookups, and
+confirmations all still work.
+
+### Reset and saved data
+
+```bash
+./reset.sh         # macOS and Linux, while running: restore the dealership seed data
+.\reset.ps1        # Windows PowerShell, the same
+```
+
+Conversations, bookings, and the install are kept in `webchat/.local`. To start completely afresh,
+stop `run.py` and delete that folder. The next run installs again.
 
 ## More
 

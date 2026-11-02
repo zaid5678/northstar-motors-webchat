@@ -13,13 +13,17 @@ The server and customer widget. The website loads the widget with one script tag
 
 ## Run without Docker
 
-On Windows, macOS, or Linux, with Python 3.11 or later and Node 20.19 or later:
+On Windows, macOS, or Linux, with Python 3.11 or later, and Node 22.12 or later, or 20.19 or later,
+for the first run:
 
 ```bash
 python run.py
 ```
 
-The first run installs everything. Then open http://localhost:4173. Press Ctrl+C to stop.
+The first run installs everything into `webchat/.local`. Then open http://localhost:4173. Press
+Ctrl+C to stop. There is no bundled model this way: AI replies need Ollama with `qwen3.5:9b`, and
+without it the chat runs in degraded mode. [WEBCHAT.md](../WEBCHAT.md#without-docker) has every
+step, including where to get each install.
 
 ## Run with Docker
 
