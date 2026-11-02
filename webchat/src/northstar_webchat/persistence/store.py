@@ -36,6 +36,7 @@ from .tables import (
     events,
     messages,
     reference_failures,
+    search_memory,
     sessions,
     stream_events,
     unbookable_slots,
@@ -394,6 +395,22 @@ class Store:
                 select(func.max(stream_events.c.id)).where(stream_events.c.session_id == session_id)
             )
         return int(latest or 0)
+
+    def remember(self, session_id: str, data: dict[str, Any], at: datetime) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(
+                search_memory.delete().where(search_memory.c.session_id == session_id)
+            )
+            connection.execute(
+                insert(search_memory).values(session_id=session_id, data=json.dumps(data), at=at)
+            )
+
+    def recall(self, session_id: str) -> dict[str, Any] | None:
+        with self.engine.begin() as connection:
+            data = connection.scalar(
+                select(search_memory.c.data).where(search_memory.c.session_id == session_id)
+            )
+        return None if data is None else dict(json.loads(data))
 
     def reference_failures_total(self) -> int:
         with self.engine.begin() as connection:

@@ -79,6 +79,14 @@ stream_events = Table(
     Index("ix_stream_events_session", "session_id", "id"),
 )
 
+search_memory = Table(
+    "search_memory",
+    metadata,
+    Column("session_id", String(64), primary_key=True),
+    Column("data", Text, nullable=False),
+    Column("at", DateTime(timezone=True), nullable=False),
+)
+
 reference_failures = Table(
     "reference_failures",
     metadata,

@@ -1040,3 +1040,77 @@ gains a slot the test does not cover, and another fails if an internal ID appear
 
 **Revisit if:** cards get too long on phones, or the platform returns appointment times on a plain
 read.
+
+---
+
+## D-029: The server remembers the last search and the cars it showed
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option.
+
+**Context:** each turn was read alone, so "make that diesel", "the second one", and "compare them" did
+not work unless the customer was on a car's page.
+
+**Options:**
+
+- **A. The server remembers.** The server stores the last search and the cars shown. The model names
+  only a change or a position, and code applies it.
+- **B. Send the history to the model.** The last few messages go to the model each turn. This
+  handles odder wording, but prompts get longer on a model that reads about 20 tokens a second. The
+  model could also pick a car it was never shown.
+- **C. Both.** The most capable option, but also the slowest and the most work.
+
+**Choice:** A.
+
+**How it works:**
+
+- A `search_memory` row holds the last search and the IDs and titles of the cars shown, in card
+  order. The browse button saves one too.
+- The model sees the shown cars only as positions and titles, never IDs. It returns `refine` and
+  `vehicle_refs`.
+- A position past the number of cars shown is refused, so the model gets one repair and then
+  falls back.
+- `refine` merges the change onto the stored search, and the merged search is validated again.
+- A car picked for a workflow goes in through the model's channel, so it still needs confirming.
+- Comparisons are written by code from a fresh read of each car, because a comparison is all facts.
+
+**Evidence:**
+
+- 23 tests run against the real platform, and 20 of 20 deliberate breaks were caught.
+- On the local model, 8 of 8 messages were read correctly. That is a small check.
+
+**Consequences:**
+
+- One small database write per search, and five short lines added to the prompt.
+- Only the last list is remembered.
+- Phrases such as "a cheaper one", "lower mileage", or "cheapest first" are not supported.
+
+**Revisit if:** customers often refer back past the last list, or use relative wording.
+
+---
+
+## D-030: The model can only offer to cancel or change a booking
+
+**Date:** 2026-11-02. **Status:** accepted. The user chose this option.
+
+**Context:** the audit found a verified customer typing "thanks, that's all". The model read it as
+a cancel, and the customer was shown a cancel card for their real booking.
+
+The machine accepts a workflow start only from the customer's channel. The engine started workflows
+on the model's reading, so the event log recorded the model's choice as the customer's.
+
+**Options:**
+
+- **A. A button for cancel and change only.**
+- **B. A button for every workflow.** One extra click on every request.
+- **C. Keep as is.** Only correct the log.
+
+**Choice:** A. When the model reads a cancel or change, the reply is code-written text and one
+button, and nothing starts. Other workflows still start at once. Every start from a message now
+logs a `workflow_from_message` note with source `llm`, and every offer logs `workflow_offered`.
+
+**Why:** cancel and change act on a booking that already exists, so a misreading costs the most
+there. A wrongly started test drive costs the customer one form they can ignore.
+
+**Revisit if:** a misread start of another workflow causes real harm, or customers find the extra
+click annoying.
+

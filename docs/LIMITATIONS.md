@@ -54,8 +54,7 @@ so these are the gaps already known from `docs/PLATFORM-NOTES.md` and `docs/DECI
 
 Against the brief, these do not exist yet:
 
-- Conversation memory. Each turn is read alone, so "the second one" only works with a page vehicle.
-- Comparing vehicles, and offers shown as links, because the website has no offer pages.
+- Offers shown as links, because the website has no offer pages.
 - Structured operational logging and metrics, beyond the event log and access logs.
 
 ## Running on other computers
@@ -86,7 +85,7 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 - Form field errors are general, and do not yet point at the field that failed.
 - Customers cannot abandon a workflow from the widget, and there is no button to delete a chat (D-017).
 - A form that needs a car lists up to 50 cars as a plain dropdown.
-- Vehicle comparison has no dedicated view.
+- A comparison is plain text. There is no table view for it.
 - Stored stream events are not yet removed by the 30-day retention rule, because that job is not built.
 
 ## Scaling
@@ -96,6 +95,16 @@ and ARM chips, across Python 3.11 to 3.13 and Node 20 to 24. It covers every aut
 - `docs/SCALING.md` names metrics to add. None exist yet.
 
 ## LLM and grounding
+
+- Memory holds only the last list of cars and the search behind it (D-029). Older lists, and
+  wording such as "a cheaper one" or "lower mileage", are not understood.
+- Cars can be compared only after they have been shown. "Compare the BMW X3 and the Volvo XC40"
+  with nothing on screen gets an explanation, not a comparison.
+- The model matches a car named by make, such as "the volvo", to a position. With two Volvos on
+  screen it may pick the wrong one. If it starts a workflow, the customer still confirms the car.
+- Stored search memory is not covered by the 30-day retention rule, because that job is not built.
+- Only cancel and change are offered as buttons (D-030). A misread message can still open the form
+  for another workflow, though no workflow can write without a confirmation.
 
 - Replies with no tool results are fixed text written by code (D-027), so greetings and small talk
   feel repetitive, and the model cannot answer general questions such as "do you do finance?".

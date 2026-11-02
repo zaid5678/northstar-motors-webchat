@@ -37,6 +37,7 @@ class MemoryRepository:
         self.failures: dict[str, int] = {}
         self.transcripts: dict[str, list[dict[str, Any]]] = {}
         self.stream: dict[str, list[dict[str, Any]]] = {}
+        self.memory: dict[str, dict[str, Any]] = {}
         self.counter = 0
 
     def _log(self, session_id: str, kind: str, payload: dict[str, Any]) -> None:
@@ -161,6 +162,12 @@ class MemoryRepository:
     def last_stream_event_id(self, session_id: str) -> int:
         rows = self.stream.get(session_id, [])
         return rows[-1]["id"] if rows else 0
+
+    def remember(self, session_id: str, data: dict[str, Any], at: datetime) -> None:
+        self.memory[session_id] = dict(data)
+
+    def recall(self, session_id: str) -> dict[str, Any] | None:
+        return self.memory.get(session_id)
 
 
 def test_both_implementations_satisfy_the_contract(store: Store) -> None:

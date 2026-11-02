@@ -36,6 +36,10 @@ class PredictableLLM:
             if "evilscript" in text:
                 return "<img src=x onerror=\"window.hacked=true\"> Here you go."
             return "Here are the hybrids I found."
+        if "cancel my booking" in text:
+            return json.dumps({"intent": "workshop_cancel"})
+        if "compare them" in text:
+            return json.dumps({"intent": "compare_vehicles"})
         return json.dumps({"intent": "vehicle_search", "filters": {"fuel_type": "Hybrid"}})
 
 

@@ -24,13 +24,14 @@ from ..dealership.models import (
 )
 from ..llm.interpret import interpret
 from ..llm.types import (
+    MAX_SHOWN,
     WORKFLOW_INTENTS,
     Intent,
     Interpretation,
     InterpretationSource,
     LLMClient,
 )
-from ..workflows.types import Source, WorkflowKind
+from ..workflows.types import DEFINITIONS, Source, WorkflowKind
 from ..writes.present import View
 from ..writes.service import Proposal, WriteService
 from .compose import Composed, TextSource, compose
@@ -49,7 +50,17 @@ NO_CAR = (
 NO_STOCK = "I couldn't find any cars matching that. Try changing what you're looking for."
 NO_OFFERS = "There are no published offers for that right now."
 BUSY = "I'm still working on your last message. Please wait a moment."
-MAX_LISTED = 5
+NO_COMPARE = (
+    "I can compare cars I've already shown you. Search for some cars first, then ask me to "
+    "compare them."
+)
+# Only a press of the button starts these (D-030). A misread "thanks" must never lead to a card that
+# cancels or moves a real booking.
+OFFERED = {
+    WorkflowKind.WORKSHOP_CANCEL: "Do you want to cancel a workshop booking? Press the button to start.",
+    WorkflowKind.WORKSHOP_AMEND: "Do you want to change a workshop booking? Press the button to start.",
+}
+MAX_LISTED = MAX_SHOWN
 MAX_QUEUED_TURNS = 3
 DEPARTMENTS: tuple[Department, ...] = ("sales", "service", "parts")
 
@@ -154,6 +165,22 @@ def _site_hours(site: Dealership, hours: OpeningHours) -> str:
     return "\n".join(lines)
 
 
+def _comparison(vehicle: Vehicle) -> str:
+    return "\n".join(
+        (
+            _title(vehicle),
+            f"Price: {_price(vehicle)}",
+            f"Mileage: {vehicle.mileage:,} miles",
+            f"Fuel: {vehicle.fuel_type}",
+            f"Gearbox: {vehicle.transmission}",
+            f"Body: {vehicle.body_style}",
+            f"Colour: {vehicle.colour}",
+            f"At: {vehicle.dealership_name}",
+            f"Status: {vehicle.availability}",
+        )
+    )
+
+
 def _summaries(vehicles: Sequence[Vehicle]) -> list[str]:
     """Short on purpose: a local model reads about 20 tokens a second, and cards show the rest."""
     return [f"{_title(item)}, {_price(item)}, {item.availability}" for item in vehicles]
@@ -228,6 +255,21 @@ class TurnEngine:
             url=f"{self._site}/?vehicle={vehicle.id}",
             image=f"{self._assets}{vehicle.images[0]}" if vehicle.images else None,
         )
+
+    def _remember(self, session_id: str, search: VehicleSearch, vehicles: Sequence[Vehicle]) -> None:
+        """Stored in the order the cards are shown, so a position means the same car to both."""
+        self._service.store.remember(
+            session_id,
+            {
+                "search": search.model_dump(mode="json", exclude_none=True),
+                "shown": [{"id": item.id, "title": _title(item)} for item in vehicles[:MAX_LISTED]],
+            },
+            datetime.now(timezone.utc),
+        )
+
+    def _shown(self, session_id: str) -> list[dict[str, str]]:
+        memory = self._service.store.recall(session_id)
+        return list(memory["shown"]) if memory else []
 
     async def _finish(
         self,
@@ -362,12 +404,12 @@ class TurnEngine:
     async def _message(self, session_id: str, text: str, page_vehicle: str | None) -> TurnReply:
         await _say("understanding")
         handles = frozenset({"vehicle_1"}) if page_vehicle else frozenset()
-        result = await interpret(
-            self.llm,
-            text,
-            context=self._service.llm_context(session_id),
-            handles=handles,
-        )
+        shown = self._shown(session_id)
+        context = self._service.llm_context(session_id)
+        if shown:
+            # Positions and titles only. The model never sees an ID, so it cannot name another car.
+            context["shown_cars"] = [f"{place}: {item['title']}" for place, item in enumerate(shown, 1)]
+        result = await interpret(self.llm, text, context=context, handles=handles, shown=len(shown))
         if result.source is InterpretationSource.UNAVAILABLE:
             return await self._menu(session_id, DEGRADED, degraded=True)
         if result.source is InterpretationSource.FALLBACK:
@@ -380,13 +422,19 @@ class TurnEngine:
         intent = reading.intent
         if intent is not Intent.OTHER:
             await _say("checking")
+        shown = self._shown(session_id)
+        # interpret() has already refused a position past the cars shown.
+        chosen = list(dict.fromkeys(shown[place - 1]["id"] for place in reading.vehicle_refs))
         if intent in WORKFLOW_INTENTS:
-            return await self._start(session_id, text, reading, page_vehicle)
+            return await self._start(session_id, text, reading, page_vehicle, chosen)
         if intent is Intent.VEHICLE_SEARCH:
             return await self._search(session_id, text, reading)
+        if intent is Intent.COMPARE_VEHICLES:
+            return await self._compare(session_id, chosen or [item["id"] for item in shown])
         if intent is Intent.VEHICLE_STATUS:
-            if page_vehicle:
-                return await self._status(session_id, text, page_vehicle)
+            vehicle = chosen[0] if chosen else page_vehicle
+            if vehicle:
+                return await self._status(session_id, text, vehicle)
             return await self._menu(session_id, NO_CAR)
         if intent is Intent.OPENING_HOURS:
             return await self._hours(session_id, reading.dealership)
@@ -400,31 +448,61 @@ class TurnEngine:
         return await self._menu(session_id, GREETING)
 
     async def _start(
-        self, session_id: str, text: str, reading: Interpretation, page_vehicle: str | None
+        self,
+        session_id: str,
+        text: str,
+        reading: Interpretation,
+        page_vehicle: str | None,
+        chosen: Sequence[str] = (),
     ) -> TurnReply:
         kind = WORKFLOW_INTENTS[reading.intent]
+        store = self._service.store
+        if kind in OFFERED:
+            store.note(
+                session_id, "workflow_offered", Source.LLM, datetime.now(timezone.utc),
+                workflow=kind.value,
+            )
+            button = next(item for item in WORKFLOW_BUTTONS if item.id == kind.value)
+            return await self._finish(
+                session_id, OFFERED[kind], TextSource.TEMPLATE, actions=[button]
+            )
+        # The machine only accepts a start from the customer's channel. This note keeps the record
+        # honest: the customer typed, and it was the model's reading of that text that chose this.
+        store.note(
+            session_id, "workflow_from_message", Source.LLM, datetime.now(timezone.utc),
+            workflow=kind.value,
+        )
         view = await self._service.start(session_id, kind)
         if page_vehicle:
             found = await self._client.get_vehicle(page_vehicle)
             if isinstance(found, o.VehicleFound):
                 view = await self._service.page_value(session_id, "vehicle_id", page_vehicle)
         proposals = [Proposal(name=item.name, value=item.value) for item in reading.slots]
+        if chosen and "vehicle_id" in DEFINITIONS[kind].slot_names:
+            # A car from the list, through the model's channel, so the customer still confirms it.
+            proposals.append(Proposal(name="vehicle_id", value=chosen[0]))
         if proposals:
             view = await self._service.propose(session_id, proposals, text)
         return await self._in_workflow(session_id, view)
 
     async def _search(self, session_id: str, text: str, reading: Interpretation) -> TurnReply:
         filters = reading.filters
-        budget = filters.max_price_pounds if filters else None
-        search = VehicleSearch(
-            q=filters.q if filters else None,
-            make=filters.make if filters else None,
-            fuel_type=filters.fuel_type if filters else None,
-            body_style=filters.body_style if filters else None,
-            transmission=filters.transmission if filters else None,
-            dealership_id=f"northstar-{reading.dealership}" if reading.dealership else None,
-            max_price_pence=budget * 100 if budget is not None else None,
-        )
+        changes: dict[str, object] = {}
+        if filters:
+            changes = {
+                name: value
+                for name in ("q", "make", "fuel_type", "body_style", "transmission")
+                if (value := getattr(filters, name)) is not None
+            }
+            if filters.max_price_pounds is not None:
+                changes["max_price_pence"] = filters.max_price_pounds * 100
+        if reading.dealership:
+            changes["dealership_id"] = f"northstar-{reading.dealership}"
+        memory = self._service.store.recall(session_id) if reading.refine else None
+        base = VehicleSearch.model_validate(memory["search"]) if memory else VehicleSearch()
+        # Validated again, so a stored search and the model's changes are both checked here.
+        search = VehicleSearch.model_validate({**base.model_dump(), **changes})
+        budget = None if search.max_price_pence is None else search.max_price_pence // 100
         return await self._stock_reply(session_id, text, search, budget)
 
     async def _stock_reply(
@@ -434,6 +512,7 @@ class TurnEngine:
         if not isinstance(found, o.StockSearched):
             return await self._menu(session_id, PLATFORM_DOWN)
         vehicles = _stock(found)
+        self._remember(session_id, search, vehicles)
         facts = facts_from([found], site_url=self._site)
         if budget is not None:
             facts.prices.add(budget * 100)  # The filter holds it, so repeating it is safe.
@@ -473,6 +552,23 @@ class TurnEngine:
             data=data,
             template=template,
             vehicles=[found.vehicle],
+        )
+
+    async def _compare(self, session_id: str, vehicle_ids: Sequence[str]) -> TurnReply:
+        """Written by code from a live read of each car. A comparison is all facts, so there is
+        nothing for the model to add, and plenty for it to get wrong."""
+        if len(vehicle_ids) < 2:
+            return await self._finish(session_id, NO_COMPARE, TextSource.TEMPLATE)
+        found = [await self._client.get_vehicle(item) for item in vehicle_ids]
+        if not all(isinstance(item, o.VehicleFound) for item in found):
+            return await self._menu(session_id, PLATFORM_DOWN)
+        vehicles = [item.vehicle for item in found if isinstance(item, o.VehicleFound)]
+        return await self._finish(
+            session_id,
+            "\n\n".join(_comparison(item) for item in vehicles),
+            TextSource.TEMPLATE,
+            outcomes=found,
+            vehicles=vehicles,
         )
 
     async def _hours_lines(self, town: str | None) -> list[str] | None:
@@ -537,10 +633,12 @@ class TurnEngine:
             view = await self._service.start(session_id, BUTTON_WORKFLOWS[action_id])
             return await self._in_workflow(session_id, view)
         if action_id == "find_stock":
-            found = await self._client.search_stock(VehicleSearch(sort="newest"))
+            search = VehicleSearch(sort="newest")
+            found = await self._client.search_stock(search)
             if not isinstance(found, o.StockSearched):
                 return await self._menu(session_id, PLATFORM_DOWN)
             vehicles = _stock(found)
+            self._remember(session_id, search, vehicles)
             return await self._finish(
                 session_id,
                 f"Here are some of our {len(vehicles)} cars:\n{_list_lines(vehicles)}",

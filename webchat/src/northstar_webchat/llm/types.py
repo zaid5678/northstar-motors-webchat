@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal, Protocol, runtime_checkable
+from typing import Annotated, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -65,8 +65,12 @@ class Intent(StrEnum):
     MESSAGE = "message"
     SALES_ENQUIRY = "sales_enquiry"
     VEHICLE_INTEREST = "vehicle_interest"
+    COMPARE_VEHICLES = "compare_vehicles"
     OTHER = "other"
 
+
+MAX_SHOWN = 5
+"""How many cars a reply shows, so how many a customer can point at."""
 
 WORKFLOW_INTENTS: dict[Intent, WorkflowKind] = {
     Intent(kind.value): kind for kind in WorkflowKind
@@ -99,6 +103,11 @@ class Interpretation(Strict):
     dealership: Literal["manchester", "stockport", "liverpool", "bolton"] | None = None
     vehicle_handle: str | None = None
     slots: list[SlotGuess] = []
+    # Memory (D-029). The model names a change or a position. Code applies it to what it stored.
+    refine: bool = False
+    vehicle_refs: list[Annotated[int, Field(ge=1, le=MAX_SHOWN)]] = Field(
+        default=[], max_length=MAX_SHOWN
+    )
 
 
 class InterpretationSource(StrEnum):

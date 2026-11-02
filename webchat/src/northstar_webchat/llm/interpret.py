@@ -42,7 +42,15 @@ callback: explicitly asks a person to phone them
 message: wants to leave a message for a department
 sales_enquiry: general or finance question for the sales team
 vehicle_interest: wants to hear if a reserved car becomes free
+compare_vehicles: wants cars already shown compared side by side
 other: greetings, thanks, small talk, or anything that does not clearly ask for one of the above
+
+MEMORY
+<context> may list shown_cars by position, and last_search.
+refine: true only when the customer changes the last search rather than starting a new one. Then
+filters holds only what changes.
+vehicle_refs: the positions in shown_cars the customer means, such as [2] for "the second one". Use
+[] when they mean no shown car. compare_vehicles with [] means every car shown.
 
 EXAMPLES"""
 
@@ -61,6 +69,10 @@ EXAMPLES = (
     ("has the Volvo gone yet", '{"intent":"vehicle_status"}'),
     ("what are your hours at Liverpool", '{"intent":"opening_hours","dealership":"liverpool"}'),
     ("my brakes need looking at", '{"intent":"workshop_create"}'),
+    ("actually make that diesel", '{"intent":"vehicle_search","refine":true,"filters":{"fuel_type":"Diesel"}}'),
+    ("is the second one still for sale", '{"intent":"vehicle_status","vehicle_refs":[2]}'),
+    ("compare the first two", '{"intent":"compare_vehicles","vehicle_refs":[1,2]}'),
+    ("can I test drive the third one", '{"intent":"test_drive","vehicle_refs":[3]}'),
     ("hello", '{"intent":"other"}'),
     ("thanks for your help", '{"intent":"other"}'),
     ("can you help me", '{"intent":"other"}'),
@@ -75,7 +87,7 @@ def wrap(tag: str, text: str) -> str:
     return f"<{tag}>\n{cleaned}\n</{tag}>"
 
 
-def _parse(reply: str, handles: frozenset[str]) -> Interpretation | str:
+def _parse(reply: str, handles: frozenset[str], shown: int) -> Interpretation | str:
     """Returns the interpretation, or what was wrong. Field names only: the reply is untrusted,
     so none of its content goes back into a prompt."""
     fenced = re.fullmatch(r"\s*```(?:json)?\s*(.*?)\s*```\s*", reply, flags=re.DOTALL)
@@ -86,6 +98,8 @@ def _parse(reply: str, handles: frozenset[str]) -> Interpretation | str:
         return f"invalid fields: {[name for name in names if name] or ['not valid JSON']}"
     if parsed.vehicle_handle is not None and parsed.vehicle_handle not in handles:
         return "invalid fields: ['vehicle_handle']"
+    if any(position > shown for position in parsed.vehicle_refs):
+        return f"invalid fields: ['vehicle_refs'] (only {shown} cars were shown)"
     return parsed
 
 
@@ -99,6 +113,7 @@ async def interpret(
     *,
     context: dict[str, object] | None = None,
     handles: frozenset[str] = frozenset(),
+    shown: int = 0,
 ) -> Interpreted:
     prompt = wrap("customer_message", customer_text)
     if context:
@@ -108,11 +123,11 @@ async def interpret(
     messages = [Message("system", SYSTEM), Message("user", prompt)]
     schema = Interpretation.model_json_schema()
     try:
-        first = _parse(await llm.complete(messages, schema=schema), handles)
+        first = _parse(await llm.complete(messages, schema=schema), handles, shown)
         if isinstance(first, Interpretation):
             return Interpreted(interpretation=first, source=InterpretationSource.MODEL)
         repair = Message("user", f"Your reply was rejected: {first}. Return corrected JSON only.")
-        second = _parse(await llm.complete([*messages, repair], schema=schema), handles)
+        second = _parse(await llm.complete([*messages, repair], schema=schema), handles, shown)
     except LLMUnavailable:
         return _safe(InterpretationSource.UNAVAILABLE)
     if isinstance(second, Interpretation):

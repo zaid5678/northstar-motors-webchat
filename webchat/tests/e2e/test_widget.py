@@ -73,6 +73,27 @@ class TestTheSlice:
         expect(page.get_by_role("button", name="Open chat, 1 unread")).to_be_visible()
 
 
+class TestMemoryAndOffers:
+    def test_a_typed_cancel_is_offered_as_a_button_not_started(self, page: Page) -> None:
+        launcher(page).click()
+        send(page, "please cancel my booking")
+        expect(log(page)).to_contain_text("Do you want to cancel a workshop booking?")
+        expect(page.locator("form.form")).to_have_count(0)
+        log(page).get_by_role("button", name="Cancel a booking").click()
+        expect(page.locator("form.form")).to_be_visible()
+
+    def test_compare_them_compares_the_cards_on_screen(self, page: Page) -> None:
+        launcher(page).click()
+        send(page, "any hybrids?")
+        expect(log(page)).to_contain_text("Here are the hybrids I found.")
+        titles = log(page).locator("a.card strong").all_inner_texts()
+        expect(box(page)).to_be_enabled()
+        send(page, "compare them")
+        expect(log(page)).to_contain_text("Mileage:")
+        reply = log(page).inner_text().split("compare them", 1)[1]
+        assert titles and all(title in reply for title in titles)
+
+
 class TestSafety:
     def test_model_html_is_shown_as_text(self, page: Page) -> None:
         launcher(page).click()
